@@ -1,0 +1,9 @@
+{
+  "apiPort": 8443,
+  "checkInterval": 30000,
+  "logLevel": "info",
+  "enableMDNS": true,
+  "autoUpdate": true,
+  "syncInterval": 300000,
+  "description": "Default configuration for Allow2 Automate Agent"
+}

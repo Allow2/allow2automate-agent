@@ -1,0 +1,32 @@
+[
+  {
+    "processName": "Steam.exe",
+    "allowed": false,
+    "checkInterval": 30000,
+    "description": "Steam gaming platform"
+  },
+  {
+    "processName": "Epic Games Launcher.exe",
+    "allowed": false,
+    "checkInterval": 30000,
+    "description": "Epic Games launcher"
+  },
+  {
+    "processName": "chrome.exe",
+    "allowed": true,
+    "checkInterval": 60000,
+    "description": "Google Chrome browser"
+  },
+  {
+    "processName": "firefox.exe",
+    "allowed": true,
+    "checkInterval": 60000,
+    "description": "Mozilla Firefox browser"
+  },
+  {
+    "processName": "Discord.exe",
+    "allowed": false,
+    "checkInterval": 45000,
+    "description": "Discord chat application"
+  }
+]

@@ -1,0 +1,49 @@
+# Code Owners for allow2automate-agent
+#
+# These owners will be automatically requested for review when someone
+# opens a pull request that modifies code in specific directories.
+#
+# Format: path @username @org/team-name
+#
+# More info: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything in the repo
+* @allow2/developers
+
+# GitHub Actions and CI/CD workflows
+/.github/ @allow2/devops @allow2/developers
+
+# Installer scripts and configurations
+/installers/ @allow2/devops @allow2/release-engineers
+
+# Platform-specific implementations
+/src/platform/windows/ @allow2/windows-team
+/src/platform/macos/ @allow2/macos-team
+/src/platform/linux/ @allow2/linux-team
+
+# Core agent logic
+/src/*.js @allow2/core-team @allow2/developers
+
+# Configuration files
+/config/ @allow2/core-team @allow2/security-team
+
+# Tests
+/tests/ @allow2/qa-team @allow2/developers
+
+# Documentation
+*.md @allow2/documentation-team
+
+# Security-sensitive files
+/src/SecurityManager.js @allow2/security-team
+/src/AuthManager.js @allow2/security-team
+
+# Build scripts
+/scripts/ @allow2/devops
+
+# Package management
+package.json @allow2/core-team @allow2/devops
+package-lock.json @allow2/core-team @allow2/devops
+
+# ESLint and Jest configuration
+.eslintrc.* @allow2/core-team
+jest.config.js @allow2/qa-team

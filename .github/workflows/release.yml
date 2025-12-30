@@ -1,0 +1,331 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-sign:
+    name: Build and Sign Installers
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            ext: msi
+          - os: macos-latest
+            platform: macos
+            ext: pkg
+          - os: ubuntu-latest
+            platform: linux
+            ext: deb,rpm
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Get version from tag
+        id: version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      # Windows Build and Sign
+      - name: Install WiX Toolset (Windows)
+        if: matrix.platform == 'windows'
+        run: |
+          choco install wixtoolset -y
+          echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build Windows MSI
+        if: matrix.platform == 'windows'
+        run: npm run build:windows
+
+      - name: Decode Windows certificate
+        if: matrix.platform == 'windows' && secrets.WINDOWS_CERT_BASE64 != ''
+        shell: bash
+        run: |
+          echo "${{ secrets.WINDOWS_CERT_BASE64 }}" | base64 -d > certificate.pfx
+
+      - name: Sign Windows MSI
+        if: matrix.platform == 'windows' && secrets.WINDOWS_CERT_BASE64 != ''
+        shell: pwsh
+        run: |
+          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("certificate.pfx", "${{ secrets.WINDOWS_CERT_PASSWORD }}")
+          $msi = Get-ChildItem -Path installers/windows/dist/*.msi | Select-Object -First 1
+          & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f certificate.pfx /p "${{ secrets.WINDOWS_CERT_PASSWORD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 $msi.FullName
+          Remove-Item certificate.pfx
+
+      # macOS Build and Sign
+      - name: Build macOS PKG
+        if: matrix.platform == 'macos'
+        run: npm run build:macos
+
+      - name: Import Apple certificate
+        if: matrix.platform == 'macos' && secrets.APPLE_CERT_BASE64 != ''
+        run: |
+          echo "${{ secrets.APPLE_CERT_BASE64 }}" | base64 -d > certificate.p12
+          security create-keychain -p actions temp.keychain
+          security default-keychain -s temp.keychain
+          security unlock-keychain -p actions temp.keychain
+          security import certificate.p12 -k temp.keychain -P "${{ secrets.APPLE_CERT_PASSWORD }}" -T /usr/bin/codesign -T /usr/bin/productsign
+          security set-key-partition-list -S apple-tool:,apple: -s -k actions temp.keychain
+          rm certificate.p12
+
+      - name: Sign and notarize macOS PKG
+        if: matrix.platform == 'macos' && secrets.APPLE_DEVELOPER_ID != ''
+        run: |
+          PKG=$(find installers/macos/dist -name "*.pkg" | head -n 1)
+          productsign --sign "${{ secrets.APPLE_DEVELOPER_ID }}" "$PKG" "${PKG%.pkg}-signed.pkg"
+          mv "${PKG%.pkg}-signed.pkg" "$PKG"
+
+          xcrun notarytool submit "$PKG" \
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --password "${{ secrets.APPLE_NOTARIZATION_PASSWORD }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+            --wait
+
+          xcrun stapler staple "$PKG"
+
+      # Linux Build and Sign
+      - name: Install fpm (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby ruby-dev rubygems build-essential rpm
+          sudo gem install --no-document fpm
+
+      - name: Build Linux DEB
+        if: matrix.platform == 'linux'
+        run: npm run build:linux
+
+      - name: Build Linux RPM
+        if: matrix.platform == 'linux'
+        run: |
+          cd installers/linux
+          bash build-rpm.sh
+
+      - name: Import GPG key
+        if: matrix.platform == 'linux' && secrets.GPG_PRIVATE_KEY != ''
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          echo "allow-preset-passphrase" > ~/.gnupg/gpg-agent.conf
+          gpg-connect-agent reloadagent /bye
+
+      - name: Sign Linux packages
+        if: matrix.platform == 'linux' && secrets.GPG_PRIVATE_KEY != ''
+        run: |
+          for pkg in installers/linux/dist/*.deb installers/linux/dist/*.rpm; do
+            if [ -f "$pkg" ]; then
+              echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --passphrase-fd 0 \
+                --pinentry-mode loopback -u "${{ secrets.GPG_KEY_ID }}" \
+                --detach-sign --armor "$pkg"
+            fi
+          done
+
+      # Upload artifacts
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.platform }}
+          path: |
+            installers/windows/dist/*.msi
+            installers/macos/dist/*.pkg
+            installers/linux/dist/*.deb
+            installers/linux/dist/*.rpm
+            installers/**/*.asc
+          retention-days: 90
+
+  create-release:
+    name: Create GitHub Release
+    needs: build-and-sign
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Rename installers with version
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          mkdir -p release-files
+
+          # Windows
+          if [ -f artifacts/installer-windows/*.msi ]; then
+            MSI=$(find artifacts/installer-windows -name "*.msi" | head -n 1)
+            cp "$MSI" "release-files/allow2automate-agent-win-x64-${VERSION}.msi"
+          fi
+
+          # macOS
+          if [ -f artifacts/installer-macos/*.pkg ]; then
+            PKG=$(find artifacts/installer-macos -name "*.pkg" | head -n 1)
+            cp "$PKG" "release-files/allow2automate-agent-darwin-x64-${VERSION}.pkg"
+          fi
+
+          # Linux DEB
+          if [ -f artifacts/installer-linux/*.deb ]; then
+            DEB=$(find artifacts/installer-linux -name "*.deb" | head -n 1)
+            cp "$DEB" "release-files/allow2automate-agent-linux-amd64-${VERSION}.deb"
+          fi
+
+          # Linux RPM
+          if [ -f artifacts/installer-linux/*.rpm ]; then
+            RPM=$(find artifacts/installer-linux -name "*.rpm" | head -n 1)
+            cp "$RPM" "release-files/allow2automate-agent-linux-x86_64-${VERSION}.rpm"
+          fi
+
+          # Copy signature files
+          cp artifacts/installer-*/*.asc release-files/ 2>/dev/null || true
+
+      - name: Generate checksums
+        run: |
+          cd release-files
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Create release metadata
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          cat > release-files/release-metadata.json << 'EOF'
+          {
+            "version": "$VERSION",
+            "released": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "platforms": ["windows", "macos", "linux"],
+            "checksums": {
+          EOF
+
+          cd release-files
+          first=true
+          for file in *.msi *.pkg *.deb *.rpm; do
+            if [ -f "$file" ]; then
+              hash=$(sha256sum "$file" | awk '{print $1}')
+              if [ "$first" = true ]; then
+                first=false
+              else
+                echo "," >> release-metadata.json
+              fi
+              echo "      \"$file\": \"$hash\"" >> release-metadata.json
+            fi
+          done
+
+          cat >> release-metadata.json << 'EOF'
+            }
+          }
+          EOF
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          if [ -z "$PREV_TAG" ]; then
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" HEAD)
+          else
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" ${PREV_TAG}..HEAD)
+          fi
+
+          cat > release-notes.md << EOF
+          ## Allow2 Automate Agent ${VERSION}
+
+          ### Installation Instructions
+
+          #### Windows
+          1. Download \`allow2automate-agent-win-x64-${VERSION}.msi\`
+          2. Run the installer and follow the setup wizard
+          3. The agent will start automatically as a Windows service
+
+          #### macOS
+          1. Download \`allow2automate-agent-darwin-x64-${VERSION}.pkg\`
+          2. Open the package and follow the installer
+          3. The agent will start automatically as a LaunchDaemon
+
+          #### Linux (DEB)
+          \`\`\`bash
+          wget https://github.com/${{ github.repository }}/releases/download/${VERSION}/allow2automate-agent-linux-amd64-${VERSION}.deb
+          sudo dpkg -i allow2automate-agent-linux-amd64-${VERSION}.deb
+          sudo systemctl start allow2automate-agent
+          \`\`\`
+
+          #### Linux (RPM)
+          \`\`\`bash
+          wget https://github.com/${{ github.repository }}/releases/download/${VERSION}/allow2automate-agent-linux-x86_64-${VERSION}.rpm
+          sudo rpm -i allow2automate-agent-linux-x86_64-${VERSION}.rpm
+          sudo systemctl start allow2automate-agent
+          \`\`\`
+
+          ### Verification
+
+          All installers are signed and include SHA256 checksums in \`checksums.txt\`.
+
+          To verify your download:
+          \`\`\`bash
+          sha256sum -c checksums.txt
+          \`\`\`
+
+          ### Changes
+
+          ${CHANGELOG}
+
+          ### Platform Support
+
+          - Windows 10/11 (x64)
+          - macOS 11+ (x64, ARM64)
+          - Linux (DEB/RPM, x64)
+
+          ### Requirements
+
+          - Node.js 18.0.0 or higher (bundled in installers)
+          - Internet connection for Allow2 API communication
+
+          ---
+
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION}
+          EOF
+
+          cat release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release-files/*
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release summary
+        run: |
+          echo "## Release Created Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Version: ${{ steps.version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          ls -lh release-files/ >> $GITHUB_STEP_SUMMARY

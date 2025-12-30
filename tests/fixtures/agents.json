@@ -1,0 +1,29 @@
+[
+  {
+    "id": "agent-1",
+    "hostname": "child-pc-1",
+    "platform": "win32",
+    "online": true,
+    "lastSeen": "2025-12-30T00:00:00.000Z",
+    "version": "1.0.0",
+    "ipAddresses": ["192.168.1.101"]
+  },
+  {
+    "id": "agent-2",
+    "hostname": "child-pc-2",
+    "platform": "darwin",
+    "online": true,
+    "lastSeen": "2025-12-30T00:00:00.000Z",
+    "version": "1.0.0",
+    "ipAddresses": ["192.168.1.102"]
+  },
+  {
+    "id": "agent-3",
+    "hostname": "child-pc-3",
+    "platform": "win32",
+    "online": false,
+    "lastSeen": "2025-12-29T00:00:00.000Z",
+    "version": "1.0.0",
+    "ipAddresses": ["192.168.1.103"]
+  }
+]
