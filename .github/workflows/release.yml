@@ -36,6 +36,7 @@ jobs:
           node-version: '18'
 
       - name: Generate lock file if missing
+        shell: bash
         run: |
           if [ ! -f package-lock.json ]; then
             npm install --package-lock-only
