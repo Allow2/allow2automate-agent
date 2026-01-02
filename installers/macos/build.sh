@@ -9,7 +9,7 @@ echo "Version: $VERSION"
 
 # Build the binary with pkg
 echo "Building macOS binary..."
-npx pkg . --targets node18-macos-x64 --out-path dist
+npx pkg . --targets node18-macos-x64 --out-path dist --output dist/allow2automate-agent-macos
 
 # Create installer structure
 BUILD_DIR="installers/macos/build"
@@ -20,8 +20,18 @@ SCRIPTS_DIR="$BUILD_DIR/scripts"
 rm -rf "$BUILD_DIR" "$DIST_DIR"
 mkdir -p "$PAYLOAD_DIR/usr/local/bin" "$PAYLOAD_DIR/Library/LaunchDaemons" "$SCRIPTS_DIR" "$DIST_DIR"
 
-# Copy binary
-cp dist/allow2automate-agent-macos "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
+# List what was actually built (for debugging)
+echo "Built binaries:"
+ls -la dist/
+
+# Copy binary (find it regardless of exact name)
+BINARY=$(find dist -name "*allow2automate-agent*" -type f | head -n 1)
+if [ -z "$BINARY" ]; then
+    echo "Error: No binary found in dist/"
+    exit 1
+fi
+echo "Using binary: $BINARY"
+cp "$BINARY" "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
 chmod +x "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
 
 # Create LaunchDaemon plist

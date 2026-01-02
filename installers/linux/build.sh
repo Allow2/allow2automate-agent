@@ -9,7 +9,7 @@ echo "Version: $VERSION"
 
 # Build the binary with pkg
 echo "Building Linux binary..."
-npx pkg . --targets node18-linux-x64 --out-path dist
+npx pkg . --targets node18-linux-x64 --out-path dist --output dist/allow2automate-agent-linux
 
 # Create installer structure
 BUILD_DIR="installers/linux/build"
@@ -18,8 +18,18 @@ DIST_DIR="installers/linux/dist"
 rm -rf "$BUILD_DIR" "$DIST_DIR"
 mkdir -p "$BUILD_DIR/usr/local/bin" "$BUILD_DIR/lib/systemd/system" "$DIST_DIR"
 
-# Copy binary
-cp dist/allow2automate-agent-linux "$BUILD_DIR/usr/local/bin/allow2automate-agent"
+# List what was actually built (for debugging)
+echo "Built binaries:"
+ls -la dist/
+
+# Copy binary (find it regardless of exact name)
+BINARY=$(find dist -name "*allow2automate-agent*" -type f | head -n 1)
+if [ -z "$BINARY" ]; then
+    echo "Error: No binary found in dist/"
+    exit 1
+fi
+echo "Using binary: $BINARY"
+cp "$BINARY" "$BUILD_DIR/usr/local/bin/allow2automate-agent"
 chmod +x "$BUILD_DIR/usr/local/bin/allow2automate-agent"
 
 # Create systemd service
