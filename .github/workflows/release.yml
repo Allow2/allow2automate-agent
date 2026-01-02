@@ -76,8 +76,14 @@ jobs:
         run: npm run build:macos
 
       - name: Import Apple certificate
-        if: matrix.platform == 'macos' && secrets.APPLE_CERT_BASE64 != ''
+        if: matrix.platform == 'macos'
+        env:
+          APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
         run: |
+          if [ -z "$APPLE_CERT_BASE64" ]; then
+            echo "Skipping certificate import - APPLE_CERT_BASE64 not set"
+            exit 0
+          fi
           echo "${{ secrets.APPLE_CERT_BASE64 }}" | base64 -d > certificate.p12
           security create-keychain -p actions temp.keychain
           security default-keychain -s temp.keychain
@@ -87,8 +93,14 @@ jobs:
           rm certificate.p12
 
       - name: Sign and notarize macOS PKG
-        if: matrix.platform == 'macos' && secrets.APPLE_DEVELOPER_ID != ''
+        if: matrix.platform == 'macos'
+        env:
+          APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
         run: |
+          if [ -z "$APPLE_DEVELOPER_ID" ]; then
+            echo "Skipping signing/notarization - APPLE_DEVELOPER_ID not set"
+            exit 0
+          fi
           PKG=$(find installers/macos/dist -name "*.pkg" | head -n 1)
           productsign --sign "${{ secrets.APPLE_DEVELOPER_ID }}" "$PKG" "${PKG%.pkg}-signed.pkg"
           mv "${PKG%.pkg}-signed.pkg" "$PKG"
@@ -120,15 +132,27 @@ jobs:
           bash build-rpm.sh
 
       - name: Import GPG key
-        if: matrix.platform == 'linux' && secrets.GPG_PRIVATE_KEY != ''
+        if: matrix.platform == 'linux'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "Skipping GPG import - GPG_PRIVATE_KEY not set"
+            exit 0
+          fi
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
           echo "allow-preset-passphrase" > ~/.gnupg/gpg-agent.conf
           gpg-connect-agent reloadagent /bye
 
       - name: Sign Linux packages
-        if: matrix.platform == 'linux' && secrets.GPG_PRIVATE_KEY != ''
+        if: matrix.platform == 'linux'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "Skipping package signing - GPG_PRIVATE_KEY not set"
+            exit 0
+          fi
           for pkg in installers/linux/dist/*.deb installers/linux/dist/*.rpm; do
             if [ -f "$pkg" ]; then
               echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --passphrase-fd 0 \
