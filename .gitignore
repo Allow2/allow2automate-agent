@@ -48,3 +48,8 @@ test-config.json
 # Temp
 tmp/
 temp/
+
+# Build output
+dist/
+installers/**/build/
+installers/**/dist/

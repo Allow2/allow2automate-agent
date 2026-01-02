@@ -58,35 +58,31 @@ jobs:
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
       # Windows Build and Sign
-      # - name: Install WiX Toolset (Windows)
-      #   if: matrix.platform == 'windows'
-      #   run: |
-      #     choco install wixtoolset -y
-      #     echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Build Windows executable
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: bash installers/windows/build.sh
 
-      # - name: Build Windows MSI
-      #   if: matrix.platform == 'windows'
-      #   run: npm run build:windows
+      - name: Sign Windows executable
+        if: matrix.platform == 'windows'
+        env:
+          WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrEmpty($env:WINDOWS_CERT_BASE64)) {
+            Write-Host "Skipping code signing - WINDOWS_CERT_BASE64 not set"
+            exit 0
+          }
 
-      # - name: Decode Windows certificate
-      #   if: matrix.platform == 'windows' && secrets.WINDOWS_CERT_BASE64 != ''
-      #   shell: bash
-      #   run: |
-      #     echo "${{ secrets.WINDOWS_CERT_BASE64 }}" | base64 -d > certificate.pfx
-
-      # - name: Sign Windows MSI
-      #   if: matrix.platform == 'windows' && secrets.WINDOWS_CERT_BASE64 != ''
-      #   shell: pwsh
-      #   run: |
-      #     $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2("certificate.pfx", "${{ secrets.WINDOWS_CERT_PASSWORD }}")
-      #     $msi = Get-ChildItem -Path installers/windows/dist/*.msi | Select-Object -First 1
-      #     & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f certificate.pfx /p "${{ secrets.WINDOWS_CERT_PASSWORD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 $msi.FullName
-      #     Remove-Item certificate.pfx
+          [System.Convert]::FromBase64String($env:WINDOWS_CERT_BASE64) | Set-Content -Path certificate.pfx -Encoding Byte
+          $exe = Get-ChildItem -Path installers/windows/dist/*.exe | Select-Object -First 1
+          & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f certificate.pfx /p "${{ secrets.WINDOWS_CERT_PASSWORD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 $exe.FullName
+          Remove-Item certificate.pfx
 
       # macOS Build and Sign
       - name: Build macOS PKG
         if: matrix.platform == 'macos'
-        run: npm run build:macos
+        run: bash installers/macos/build.sh
 
       - name: Import Apple certificate
         if: matrix.platform == 'macos'
@@ -134,15 +130,9 @@ jobs:
           sudo apt-get install -y ruby ruby-dev rubygems build-essential rpm
           sudo gem install --no-document fpm
 
-      - name: Build Linux DEB
+      - name: Build Linux packages (DEB and RPM)
         if: matrix.platform == 'linux'
-        run: npm run build:linux
-
-      - name: Build Linux RPM
-        if: matrix.platform == 'linux'
-        run: |
-          cd installers/linux
-          bash build-rpm.sh
+        run: bash installers/linux/build.sh
 
       - name: Import GPG key
         if: matrix.platform == 'linux'
@@ -180,7 +170,7 @@ jobs:
         with:
           name: installer-${{ matrix.platform }}
           path: |
-            installers/windows/dist/*.msi
+            installers/windows/dist/*.exe
             installers/macos/dist/*.pkg
             installers/linux/dist/*.deb
             installers/linux/dist/*.rpm
@@ -213,9 +203,9 @@ jobs:
           mkdir -p release-files
 
           # Windows
-          if [ -f artifacts/installer-windows/*.msi ]; then
-            MSI=$(find artifacts/installer-windows -name "*.msi" | head -n 1)
-            cp "$MSI" "release-files/allow2automate-agent-win-x64-${VERSION}.msi"
+          if [ -f artifacts/installer-windows/*.exe ]; then
+            EXE=$(find artifacts/installer-windows -name "*.exe" | head -n 1)
+            cp "$EXE" "release-files/allow2automate-agent-win-x64-${VERSION}.exe"
           fi
 
           # macOS
@@ -258,7 +248,7 @@ jobs:
 
           cd release-files
           first=true
-          for file in *.msi *.pkg *.deb *.rpm; do
+          for file in *.exe *.pkg *.deb *.rpm; do
             if [ -f "$file" ]; then
               hash=$(sha256sum "$file" | awk '{print $1}')
               if [ "$first" = true ]; then
@@ -293,9 +283,9 @@ jobs:
           ### Installation Instructions
 
           #### Windows
-          1. Download \`allow2automate-agent-win-x64-${VERSION}.msi\`
-          2. Run the installer and follow the setup wizard
-          3. The agent will start automatically as a Windows service
+          1. Download \`allow2automate-agent-win-x64-${VERSION}.exe\`
+          2. Run the executable with administrator privileges
+          3. The agent service will start automatically
 
           #### macOS
           1. Download \`allow2automate-agent-darwin-x64-${VERSION}.pkg\`

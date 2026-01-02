@@ -1,9 +1,21 @@
 # Installation Guide - Allow2 Automate Agent
 
+## ⚠️ IMPORTANT
+
+**This agent is NOT designed for direct installation by end users.**
+
+The Allow2 Automate Agent **must** be configured with connection details to communicate with an Allow2 Automate server. The agent requires:
+
+1. **Parent API URL** - IP address or hostname of the Allow2 Automate server
+2. **mDNS Discovery** - Network must support multicast for auto-discovery
+3. **Authentication Token** - JWT token provided during pairing with parent server
+
+**End users should install the agent using the pre-configured installers** which are downloaded from the Allow2 Automate application.
+
 ## Prerequisites
 
-- Node.js >= 18.0.0
-- npm (comes with Node.js)
+- Node.js >= 18.0.0 (bundled in installers)
+- npm (comes with Node.js - only for development)
 - Administrator/root privileges for system service installation
 
 ## Development Installation
@@ -209,17 +221,25 @@ npm run build:linux
 # Generates packages in installers/linux/output/
 ```
 
-## Initial Setup
+## Initial Setup (Production Use)
 
-### 1. Agent Registration
+### 1. Agent Pairing Process
 
-The agent needs to be paired with a parent application:
+**The agent MUST be paired with an Allow2 Automate server before it can function.**
 
-1. Start the agent
-2. Parent app discovers agent via mDNS
-3. Parent app calls pairing endpoint
-4. Agent receives agentId and authToken
-5. Agent saves configuration
+Pairing workflow:
+
+1. User installs agent on target device (Windows/macOS/Linux)
+2. Agent starts and advertises itself via mDNS (Bonjour)
+3. Allow2 Automate server discovers agent on local network
+4. Server sends pairing request with connection details
+5. Agent saves configuration:
+   - `parentApiUrl`: Server IP/hostname
+   - `agentId`: Unique agent identifier
+   - `authToken`: JWT for authenticated communication
+6. Agent begins monitoring processes and reporting to server
+
+**Without pairing, the agent will run but has no policies to enforce.**
 
 ### 2. Creating Policies
 
