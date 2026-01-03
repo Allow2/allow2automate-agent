@@ -91,12 +91,39 @@ jobs:
             echo "Skipping certificate import - APPLE_CERT_BASE64 not set"
             exit 0
           fi
+
+          # Decode certificate
           echo "${{ secrets.APPLE_CERT_BASE64 }}" | base64 -d > certificate.p12
+
+          # Create temporary keychain
           security create-keychain -p actions temp.keychain
+          security set-keychain-settings -lut 21600 temp.keychain
           security default-keychain -s temp.keychain
           security unlock-keychain -p actions temp.keychain
-          security import certificate.p12 -k temp.keychain -P "${{ secrets.APPLE_CERT_PASSWORD }}" -T /usr/bin/codesign -T /usr/bin/productsign
-          security set-key-partition-list -S apple-tool:,apple: -s -k actions temp.keychain
+
+          # Import certificate with -A flag (allow any application access)
+          security import certificate.p12 \
+            -k temp.keychain \
+            -P "${{ secrets.APPLE_CERT_PASSWORD }}" \
+            -A \
+            -t cert \
+            -f pkcs12
+
+          # CRITICAL: Set partition list with codesign: partition
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k actions \
+            temp.keychain
+
+          # Add to keychain search list
+          security list-keychain -d user -s temp.keychain login.keychain
+
+          # Verify identities are available
+          echo "=== Verifying imported identities ==="
+          security find-identity -v temp.keychain
+
+          # Cleanup
           rm certificate.p12
 
       - name: Build macOS PKG (with binary codesigning)
