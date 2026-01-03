@@ -3,9 +3,14 @@ set -e
 
 echo "Building Linux DEB and RPM installers..."
 
-# Get version from package.json
-VERSION=$(node -p "require('./package.json').version")
-echo "Version: $VERSION"
+# Get version from environment variable (set by GitHub Actions from git tag)
+# or fall back to package.json for local builds
+if [ -z "$VERSION" ]; then
+    VERSION=$(node -p "require('./package.json').version")
+    echo "Version from package.json: $VERSION"
+else
+    echo "Version from git tag: $VERSION"
+fi
 
 # Build the binary with pkg
 echo "Building Linux binary..."

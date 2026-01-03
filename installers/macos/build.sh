@@ -3,9 +3,14 @@ set -e
 
 echo "Building macOS PKG installer..."
 
-# Get version from package.json
-VERSION=$(node -p "require('./package.json').version")
-echo "Version: $VERSION"
+# Get version from environment variable (set by GitHub Actions from git tag)
+# or fall back to package.json for local builds
+if [ -z "$VERSION" ]; then
+    VERSION=$(node -p "require('./package.json').version")
+    echo "Version from package.json: $VERSION"
+else
+    echo "Version from git tag: $VERSION"
+fi
 
 # Build the binary with pkg
 echo "Building macOS binary..."
@@ -56,6 +61,21 @@ fi
 echo "Using binary: $BINARY"
 cp "$BINARY" "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
 chmod +x "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
+
+# Sign the binary if certificate is available (done in GitHub Actions)
+# This must be done BEFORE creating the PKG
+if [ -n "$APPLE_DEVELOPER_ID" ]; then
+    echo "Signing binary with: $APPLE_DEVELOPER_ID"
+    codesign --force --options runtime \
+        --sign "$APPLE_DEVELOPER_ID" \
+        --timestamp \
+        "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
+
+    # Verify the signature
+    codesign --verify --verbose "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
+else
+    echo "⚠️  APPLE_DEVELOPER_ID not set - binary will not be signed"
+fi
 
 # Create LaunchDaemon plist
 cat > "$PAYLOAD_DIR/Library/LaunchDaemons/com.allow2.automate-agent.plist" << EOF
