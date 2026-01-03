@@ -9,7 +9,11 @@ echo "Version: $VERSION"
 
 # Build the binary with pkg
 echo "Building Windows binary..."
-npx pkg . --targets node18-win-x64 --out-path dist --output dist/allow2automate-agent-win.exe
+mkdir -p dist
+
+npx pkg . --targets node18-win-x64 --output dist/allow2automate-agent-win.exe 2>&1 | tee pkg-output.log || {
+    echo "Warning: pkg exited with error, checking if binary was created anyway..."
+}
 
 # Create installer directory
 DIST_DIR="installers/windows/dist"

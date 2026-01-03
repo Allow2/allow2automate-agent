@@ -9,7 +9,11 @@ echo "Version: $VERSION"
 
 # Build the binary with pkg
 echo "Building Linux binary..."
-npx pkg . --targets node18-linux-x64 --out-path dist --output dist/allow2automate-agent-linux
+mkdir -p dist
+
+npx pkg . --targets node18-linux-x64 --output dist/allow2automate-agent-linux 2>&1 | tee pkg-output.log || {
+    echo "Warning: pkg exited with error, checking if binary was created anyway..."
+}
 
 # Create installer structure
 BUILD_DIR="installers/linux/build"
@@ -19,15 +23,32 @@ rm -rf "$BUILD_DIR" "$DIST_DIR"
 mkdir -p "$BUILD_DIR/usr/local/bin" "$BUILD_DIR/lib/systemd/system" "$DIST_DIR"
 
 # List what was actually built (for debugging)
-echo "Built binaries:"
-ls -la dist/
+echo "=== Checking dist directory ==="
+ls -laR dist/ || echo "dist/ directory not found or empty"
 
-# Copy binary (find it regardless of exact name)
-BINARY=$(find dist -name "*allow2automate-agent*" -type f | head -n 1)
+# Try multiple possible binary names
+BINARY=""
+for pattern in "allow2automate-agent-linux" "allow2automate-agent" "@allow2-allow2automate-agent-linux" "@allow2-allow2automate-agent"; do
+    if [ -f "dist/$pattern" ]; then
+        BINARY="dist/$pattern"
+        echo "Found binary: $BINARY"
+        break
+    fi
+done
+
+# If specific names didn't work, search for any executable
 if [ -z "$BINARY" ]; then
+    echo "Searching for any binary in dist/..."
+    BINARY=$(find dist -type f -perm +111 2>/dev/null | head -n 1)
+fi
+
+if [ -z "$BINARY" ] || [ ! -f "$BINARY" ]; then
     echo "Error: No binary found in dist/"
+    echo "Contents of dist:"
+    ls -la dist/ || echo "dist/ does not exist"
     exit 1
 fi
+
 echo "Using binary: $BINARY"
 cp "$BINARY" "$BUILD_DIR/usr/local/bin/allow2automate-agent"
 chmod +x "$BUILD_DIR/usr/local/bin/allow2automate-agent"
