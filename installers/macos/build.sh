@@ -72,16 +72,16 @@ if [ -n "$APPLE_DEVELOPER_ID" ]; then
         echo "=== Keychain Debug Info ==="
         echo "Temp keychain exists at: $HOME/Library/Keychains/temp.keychain-db"
 
-        # Unlock the keychain
-        security unlock-keychain -p actions "$HOME/Library/Keychains/temp.keychain-db"
+        # Unlock the keychain (use short name without -db suffix)
+        security unlock-keychain -p actions temp.keychain
 
-        # Set as default and add to search list
-        security list-keychains -d user -s "$HOME/Library/Keychains/temp.keychain-db"
-        security default-keychain -s "$HOME/Library/Keychains/temp.keychain-db"
+        # Set as default and add to search list (use short name)
+        security list-keychains -d user -s temp.keychain login.keychain
+        security default-keychain -s temp.keychain
 
         # List all signing identities to verify certificate is accessible
         echo "Available signing identities in temp.keychain:"
-        security find-identity -v -p codesigning "$HOME/Library/Keychains/temp.keychain-db"
+        security find-identity -v -p codesigning temp.keychain
 
         echo "All available signing identities:"
         security find-identity -v -p codesigning
