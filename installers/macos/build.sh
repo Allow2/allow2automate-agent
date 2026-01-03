@@ -65,14 +65,38 @@ chmod +x "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
 # Sign the binary if certificate is available (done in GitHub Actions)
 # This must be done BEFORE creating the PKG
 if [ -n "$APPLE_DEVELOPER_ID" ]; then
-    echo "Signing binary with: $APPLE_DEVELOPER_ID"
+    echo "Signing binary with identity: $APPLE_DEVELOPER_ID"
+
+    # Debug: Check if temp keychain exists and list available identities
+    if [ -f "$HOME/Library/Keychains/temp.keychain-db" ]; then
+        echo "=== Keychain Debug Info ==="
+        echo "Temp keychain exists at: $HOME/Library/Keychains/temp.keychain-db"
+
+        # Unlock the keychain
+        security unlock-keychain -p actions "$HOME/Library/Keychains/temp.keychain-db"
+
+        # Set as default and add to search list
+        security list-keychains -d user -s "$HOME/Library/Keychains/temp.keychain-db"
+        security default-keychain -s "$HOME/Library/Keychains/temp.keychain-db"
+
+        # List all signing identities to verify certificate is accessible
+        echo "Available signing identities in temp.keychain:"
+        security find-identity -v -p codesigning "$HOME/Library/Keychains/temp.keychain-db"
+
+        echo "All available signing identities:"
+        security find-identity -v -p codesigning
+    fi
+
+    # Perform codesigning
     codesign --force --options runtime \
         --sign "$APPLE_DEVELOPER_ID" \
         --timestamp \
         "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
 
     # Verify the signature
-    codesign --verify --verbose "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
+    echo "Verifying signature..."
+    codesign --verify --verbose=4 "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
+    codesign --display --verbose=4 "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
 else
     echo "⚠️  APPLE_DEVELOPER_ID not set - binary will not be signed"
 fi
