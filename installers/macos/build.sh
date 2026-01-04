@@ -65,38 +65,68 @@ chmod +x "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
 # Sign the binary if certificate is available (done in GitHub Actions)
 # This must be done BEFORE creating the PKG
 if [ -n "$APPLE_DEVELOPER_ID" ]; then
-    echo "Signing binary with identity: $APPLE_DEVELOPER_ID"
+    echo "Signing binary with identity (redacted): ${APPLE_DEVELOPER_ID:0:-1}-"
+
+    # Determine keychain path (modern macOS uses -db suffix)
+    KEYCHAIN_NAME="temp.keychain"
+    KEYCHAIN_PATH="$HOME/Library/Keychains/temp.keychain-db"
 
     # Debug: Check if temp keychain exists and list available identities
-    if [ -f "$HOME/Library/Keychains/temp.keychain-db" ]; then
+    if [ -f "$KEYCHAIN_PATH" ]; then
         echo "=== Keychain Debug Info ==="
-        echo "Temp keychain exists at: $HOME/Library/Keychains/temp.keychain-db"
+        echo "Temp keychain exists at: $KEYCHAIN_PATH"
 
         # Unlock the keychain (use short name without -db suffix)
-        security unlock-keychain -p actions temp.keychain
+        echo "Unlocking keychain..."
+        security unlock-keychain -p actions "$KEYCHAIN_NAME"
 
-        # Set as default and add to search list (use short name)
-        security list-keychains -d user -s temp.keychain login.keychain
-        security default-keychain -s temp.keychain
+        # CRITICAL: Re-add to search list in case it was removed
+        echo "Re-adding keychain to search list..."
+        security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/"//g' | grep -v temp.keychain)
+
+        # Set as default keychain
+        echo "Setting default keychain..."
+        security default-keychain -s "$KEYCHAIN_NAME"
+
+        # Verify keychain search list (GitHub-safe - just paths)
+        echo "Current keychain search list:"
+        security list-keychains -d user
 
         # List all signing identities to verify certificate is accessible
-        echo "Available signing identities in temp.keychain:"
-        security find-identity -v -p codesigning temp.keychain
+        echo "=== Checking available identities ==="
 
-        echo "All available signing identities:"
-        security find-identity -v -p codesigning
+        echo "Identities in temp.keychain:"
+        TEMP_COUNT=$(security find-identity -v -p codesigning "$KEYCHAIN_NAME" 2>&1 | grep -c "valid identities found" || echo "0")
+        security find-identity -v -p codesigning "$KEYCHAIN_NAME" 2>&1 | sed 's/\(.*\)./\1-/'
+
+        echo "All available identities (all keychains):"
+        ALL_COUNT=$(security find-identity -v -p codesigning 2>&1 | grep -c "valid identities found" || echo "0")
+        security find-identity -v -p codesigning 2>&1 | sed 's/\(.*\)./\1-/'
+
+        echo "Identity count check: temp=$TEMP_COUNT, all=$ALL_COUNT"
+    else
+        echo "❌ ERROR: Temp keychain not found at $KEYCHAIN_PATH"
+        echo "Searching for keychain files..."
+        ls -la "$HOME/Library/Keychains/" | grep temp || echo "No temp keychain found"
+
+        echo "Available keychains:"
+        security list-keychains -d user
+
+        echo "Will attempt to sign with default keychain..."
     fi
 
-    # Perform codesigning
+    # Perform codesigning - explicitly use temp keychain
+    echo "Attempting to sign binary..."
     codesign --force --options runtime \
         --sign "$APPLE_DEVELOPER_ID" \
+        --keychain "$KEYCHAIN_PATH" \
         --timestamp \
         "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
 
     # Verify the signature
-    echo "Verifying signature..."
+    echo "✅ Verifying signature..."
     codesign --verify --verbose=4 "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
-    codesign --display --verbose=4 "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
+    codesign --display --verbose=4 "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent" | sed 's/\(.*\)./\1-/'
 else
     echo "⚠️  APPLE_DEVELOPER_ID not set - binary will not be signed"
 fi
