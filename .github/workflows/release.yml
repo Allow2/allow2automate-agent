@@ -177,9 +177,36 @@ jobs:
             echo "Skipping GPG import - GPG_PRIVATE_KEY not set"
             exit 0
           fi
+
+          echo "=== Importing GPG Key ==="
+          # Import the key
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+
+          # Configure GPG agent
           echo "allow-preset-passphrase" > ~/.gnupg/gpg-agent.conf
           gpg-connect-agent reloadagent /bye
+
+          # Verify what was imported (GitHub-safe - redact last 4 chars of key IDs)
+          echo "=== Verifying GPG Keys ==="
+          echo "Public keys imported:"
+          gpg --list-keys --keyid-format LONG | grep -A 1 "pub" | sed 's/\([A-F0-9]\{12\}\)[A-F0-9]\{4\}/\1XXXX/g'
+
+          echo "Secret keys imported:"
+          gpg --list-secret-keys --keyid-format LONG | grep -A 1 "sec" | sed 's/\([A-F0-9]\{12\}\)[A-F0-9]\{4\}/\1XXXX/g'
+
+          # Count secret keys
+          SECRET_COUNT=$(gpg --list-secret-keys --keyid-format LONG 2>/dev/null | grep -c "^sec" || echo "0")
+          echo "Total secret keys available: $SECRET_COUNT"
+
+          if [ "$SECRET_COUNT" -eq 0 ]; then
+            echo "❌ ERROR: No secret keys were imported!"
+            echo "The GPG_PRIVATE_KEY secret may only contain the public key."
+            echo "To export your private key properly, use:"
+            echo "  gpg --export-secret-keys --armor YOUR_KEY_ID"
+            exit 1
+          fi
+
+          echo "✅ Secret key imported successfully"
 
       - name: Sign Linux packages
         if: matrix.platform == 'linux'
@@ -190,13 +217,40 @@ jobs:
             echo "Skipping package signing - GPG_PRIVATE_KEY not set"
             exit 0
           fi
+
+          echo "=== Signing Linux Packages ==="
+          # Redact GPG_KEY_ID for display (show first 12 chars, hide last 4)
+          REDACTED_KEY_ID="${{ secrets.GPG_KEY_ID }}"
+          REDACTED_KEY_ID="${REDACTED_KEY_ID:0:12}XXXX"
+          echo "Using GPG Key ID (redacted): $REDACTED_KEY_ID"
+
+          # Verify the key exists before attempting to sign
+          if ! gpg --list-secret-keys "${{ secrets.GPG_KEY_ID }}" >/dev/null 2>&1; then
+            echo "❌ ERROR: Secret key $REDACTED_KEY_ID not found!"
+            echo "Available secret keys:"
+            gpg --list-secret-keys --keyid-format LONG | sed 's/\([A-F0-9]\{12\}\)[A-F0-9]\{4\}/\1XXXX/g'
+            exit 1
+          fi
+
+          # Sign each package
           for pkg in installers/linux/dist/*.deb installers/linux/dist/*.rpm; do
             if [ -f "$pkg" ]; then
+              echo "Signing: $(basename $pkg)"
               echo "${{ secrets.GPG_PASSPHRASE }}" | gpg --batch --yes --passphrase-fd 0 \
                 --pinentry-mode loopback -u "${{ secrets.GPG_KEY_ID }}" \
                 --detach-sign --armor "$pkg"
+
+              # Verify signature was created
+              if [ -f "$pkg.asc" ]; then
+                echo "✅ Signature created: $(basename $pkg).asc"
+              else
+                echo "❌ ERROR: Signature file not created for $(basename $pkg)"
+                exit 1
+              fi
             fi
           done
+
+          echo "✅ All packages signed successfully"
 
       # Upload artifacts
       - name: Upload artifacts
