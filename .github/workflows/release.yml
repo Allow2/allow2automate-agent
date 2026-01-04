@@ -75,95 +75,126 @@ jobs:
       #    Remove-Item certificate.pfx
 
       # macOS Build and Sign
-      - name: Import Apple certificate
+      - name: Import Apple certificates
         if: matrix.platform == 'macos'
         env:
-          APPLE_CERT_BASE64: ${{ secrets.APPLE_CERT_BASE64 }}
+          APPLE_APP_CERT_BASE64: ${{ secrets.APPLE_APP_CERT_BASE64 }}
+          APPLE_INSTALLER_CERT_BASE64: ${{ secrets.APPLE_INSTALLER_CERT_BASE64 }}
         run: |
-          if [ -z "$APPLE_CERT_BASE64" ]; then
-            echo "Skipping certificate import - APPLE_CERT_BASE64 not set"
+          # Check if certificates are provided
+          if [ -z "$APPLE_APP_CERT_BASE64" ] && [ -z "$APPLE_INSTALLER_CERT_BASE64" ]; then
+            echo "⚠️  No certificates provided - skipping code signing"
+            echo "To enable code signing, set these GitHub secrets:"
+            echo "  - APPLE_APP_CERT_BASE64 (Developer ID Application)"
+            echo "  - APPLE_INSTALLER_CERT_BASE64 (Developer ID Installer)"
             exit 0
           fi
 
-          # Decode certificate
-          echo "${{ secrets.APPLE_CERT_BASE64 }}" | base64 -d > certificate.p12
-
-          # Verify the .p12 file was created
-          if [ ! -f certificate.p12 ] || [ ! -s certificate.p12 ]; then
-            echo "❌ ERROR: certificate.p12 file is missing or empty"
-            exit 1
-          fi
-          FILE_SIZE=$(wc -c < certificate.p12)
-          echo "✅ Certificate file created (size: $FILE_SIZE bytes)"
-
-          # Verify the .p12 file contents
-          echo "=== Verifying .p12 file contents ==="
-          if openssl pkcs12 -in certificate.p12 -nokeys -passin pass:"${{ secrets.APPLE_CERT_PASSWORD }}" 2>/dev/null | grep -q "BEGIN CERTIFICATE"; then
-            echo "✅ .p12 contains certificate(s)"
-          else
-            echo "❌ WARNING: No certificates found in .p12 file"
-          fi
-
-          if openssl pkcs12 -in certificate.p12 -nocerts -passin pass:"${{ secrets.APPLE_CERT_PASSWORD }}" 2>/dev/null | grep -q "BEGIN"; then
-            echo "✅ .p12 contains private key"
-          else
-            echo "❌ WARNING: No private key found in .p12 file"
-          fi
-
           # Create temporary keychain
-          security create-keychain -p actions temp.keychain
+          KEYCHAIN_PATH="$HOME/Library/Keychains/temp.keychain-db"
+          KEYCHAIN_PASSWORD="actions"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" temp.keychain
+          security set-keychain-settings -lut 21600 temp.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" temp.keychain
+
+          # Import Application certificate (for signing binaries)
+          if [ -n "$APPLE_APP_CERT_BASE64" ]; then
+            echo "=== Importing Developer ID Application Certificate ==="
+            echo "${{ secrets.APPLE_APP_CERT_BASE64 }}" | base64 -d > app_cert.p12
+
+            if [ ! -f app_cert.p12 ] || [ ! -s app_cert.p12 ]; then
+              echo "❌ ERROR: app_cert.p12 file is missing or empty"
+              exit 1
+            fi
+            echo "✅ Application certificate file created (size: $(wc -c < app_cert.p12) bytes)"
+
+            # Import Application certificate
+            security import app_cert.p12 \
+              -k temp.keychain \
+              -P "${{ secrets.APPLE_CERT_PASSWORD }}" \
+              -A
+
+            rm app_cert.p12
+
+            # Verify Application certificate
+            APP_CERT_INFO=$(security find-certificate -a -p temp.keychain | openssl x509 -noout -subject -ext extendedKeyUsage 2>/dev/null || echo "")
+            if echo "$APP_CERT_INFO" | grep -q "Developer ID Application"; then
+              echo "✅ Developer ID Application certificate imported"
+            else
+              echo "⚠️  WARNING: Application certificate might not be correct type"
+            fi
+          else
+            echo "⚠️  APPLE_APP_CERT_BASE64 not set - binary will not be signed"
+          fi
+
+          # Import Installer certificate (for signing PKG)
+          if [ -n "$APPLE_INSTALLER_CERT_BASE64" ]; then
+            echo ""
+            echo "=== Importing Developer ID Installer Certificate ==="
+            echo "${{ secrets.APPLE_INSTALLER_CERT_BASE64 }}" | base64 -d > installer_cert.p12
+
+            if [ ! -f installer_cert.p12 ] || [ ! -s installer_cert.p12 ]; then
+              echo "❌ ERROR: installer_cert.p12 file is missing or empty"
+              exit 1
+            fi
+            echo "✅ Installer certificate file created (size: $(wc -c < installer_cert.p12) bytes)"
+
+            # Import Installer certificate
+            security import installer_cert.p12 \
+              -k temp.keychain \
+              -P "${{ secrets.APPLE_CERT_PASSWORD }}" \
+              -A
+
+            rm installer_cert.p12
+
+            # Verify Installer certificate
+            INSTALLER_CERT_INFO=$(security find-certificate -a -p temp.keychain | openssl x509 -noout -subject -ext extendedKeyUsage 2>/dev/null || echo "")
+            if echo "$INSTALLER_CERT_INFO" | grep -q "Developer ID Installer"; then
+              echo "✅ Developer ID Installer certificate imported"
+            else
+              echo "⚠️  WARNING: Installer certificate might not be correct type"
+            fi
+          else
+            echo "⚠️  APPLE_INSTALLER_CERT_BASE64 not set - PKG will not be signed"
+          fi
+
+          # Set partition list to allow codesign/productsign access
+          echo ""
+          echo "=== Configuring Keychain Access ==="
           security set-keychain-settings -lut 21600 temp.keychain
           security default-keychain -s temp.keychain
-          security unlock-keychain -p actions temp.keychain
 
-          echo "=== Importing certificate and private key ==="
-          # Import certificate - remove ALL type flags, just import the .p12 as-is
-          # The .p12 contains both cert and private key, and they need to be linked
-          # -A allows all applications to access without prompting
-          security import certificate.p12 \
-            -k temp.keychain \
-            -P "${{ secrets.APPLE_CERT_PASSWORD }}" \
-            -A
-
-          echo "=== Verifying what was imported ==="
-          # Check what was actually imported
-          echo "Certificates in keychain:"
-          security find-certificate -a temp.keychain | grep -c "BEGIN CERTIFICATE" || echo "0"
-
-          echo "Private keys in keychain:"
-          security dump-keychain temp.keychain | grep -c "Imported Private Key" || echo "0"
-
-          # CRITICAL: Set partition list with codesign: partition
-          # This allows codesign to access the private key without user interaction
           security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: \
+            -S apple-tool:,apple:,codesign:,productsign: \
             -s \
-            -k actions \
+            -k "$KEYCHAIN_PASSWORD" \
             temp.keychain
 
-          # Add to keychain search list (with full path including -db suffix)
+          # Add to keychain search list
           security list-keychains -d user -s \
-            "$HOME/Library/Keychains/temp.keychain-db" \
+            "$KEYCHAIN_PATH" \
             "$HOME/Library/Keychains/login.keychain-db"
 
-          # Verify identities are available
-          echo "=== Verifying imported identities ==="
-          IDENTITY_COUNT=$(security find-identity -v -p codesigning temp.keychain 2>&1 | grep -E "^\s+[0-9]+\)" | wc -l | tr -d ' ')
-          echo "Found $IDENTITY_COUNT code signing identities"
+          # Verify all identities
+          echo ""
+          echo "=== Final Identity Verification ==="
+          echo "Code signing identities:"
+          security find-identity -v -p codesigning temp.keychain | sed 's/\("[^"]*"\)/"***"/g'
 
-          security find-identity -v -p codesigning temp.keychain
+          APP_IDENTITY_COUNT=$(security find-identity -v -p codesigning temp.keychain 2>&1 | grep -c "Developer ID Application" || echo "0")
+          INSTALLER_IDENTITY_COUNT=$(security find-identity -v -p codesigning temp.keychain 2>&1 | grep -c "Developer ID Installer" || echo "0")
 
-          if [ "$IDENTITY_COUNT" -eq 0 ]; then
-            echo "❌ ERROR: No valid code signing identities found after import!"
-            echo "Certificate details:"
-            security find-certificate -a -p temp.keychain | openssl x509 -noout -subject -dates -ext keyUsage -ext extendedKeyUsage 2>/dev/null || echo "Could not parse certificate"
+          echo "Found $APP_IDENTITY_COUNT Application identity(ies)"
+          echo "Found $INSTALLER_IDENTITY_COUNT Installer identity(ies)"
+
+          if [ "$APP_IDENTITY_COUNT" -eq 0 ] && [ "$INSTALLER_IDENTITY_COUNT" -eq 0 ]; then
+            echo "❌ ERROR: No valid signing identities found!"
+            echo "Please check your certificate exports."
             exit 1
           fi
 
-          echo "✅ Certificate import successful"
-
-          # Cleanup
-          rm certificate.p12
+          echo "✅ Certificate import complete"
 
       - name: Build macOS PKG (with binary codesigning)
         if: matrix.platform == 'macos'
@@ -175,15 +206,15 @@ jobs:
       - name: Sign and notarize macOS PKG
         if: matrix.platform == 'macos'
         env:
-          APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+          APPLE_INSTALLER_CERT_BASE64: ${{ secrets.APPLE_INSTALLER_CERT_BASE64 }}
         run: |
-          if [ -z "$APPLE_DEVELOPER_ID" ]; then
-            echo "Skipping signing/notarization - APPLE_DEVELOPER_ID not set"
+          if [ -z "$APPLE_INSTALLER_CERT_BASE64" ]; then
+            echo "⚠️  APPLE_INSTALLER_CERT_BASE64 not set - skipping PKG signing"
+            echo "PKG will be created but not signed or notarized"
             exit 0
           fi
 
           echo "=== Verifying Binary Signature Before PKG Signing ==="
-          # Check if the binary was signed in the build script
           BINARY="installers/macos/build/payload/usr/local/bin/allow2automate-agent"
           if [ -f "$BINARY" ]; then
             echo "Checking binary signature..."
@@ -191,23 +222,75 @@ jobs:
               echo "✅ Binary is signed"
               codesign --display --verbose=2 "$BINARY" 2>&1 | grep "Authority\|Identifier\|TeamIdentifier" || true
             else
-              echo "❌ WARNING: Binary is NOT signed or signature is invalid!"
-              echo "This will cause notarization to fail."
+              echo "⚠️  WARNING: Binary is NOT signed"
+              echo "This may cause notarization to fail"
             fi
           else
-            echo "❌ WARNING: Binary not found at expected location: $BINARY"
+            echo "❌ ERROR: Binary not found at $BINARY"
+            exit 1
           fi
 
-          echo "=== Signing PKG ==="
+          echo ""
+          echo "=== Signing PKG with Developer ID Installer ==="
           PKG=$(find installers/macos/dist -name "*.pkg" | head -n 1)
+
+          if [ -z "$PKG" ]; then
+            echo "❌ ERROR: No PKG file found in installers/macos/dist/"
+            exit 1
+          fi
+
           echo "PKG to sign: $PKG"
 
-          productsign --sign "${{ secrets.APPLE_DEVELOPER_ID }}" "$PKG" "${PKG%.pkg}-signed.pkg"
-          mv "${PKG%.pkg}-signed.pkg" "$PKG"
+          # Find the Developer ID Installer identity
+          INSTALLER_IDENTITY=$(security find-identity -v -p codesigning temp.keychain 2>&1 | grep "Developer ID Installer" | head -1 | awk '{print $2}')
 
+          if [ -z "$INSTALLER_IDENTITY" ]; then
+            echo "❌ ERROR: No Developer ID Installer identity found in keychain"
+            echo "Available identities:"
+            security find-identity -v -p codesigning temp.keychain
+            exit 1
+          fi
+
+          echo "Using installer identity: ${INSTALLER_IDENTITY:0:8}...${INSTALLER_IDENTITY: -4}"
+
+          # Sign the PKG
+          productsign --sign "$INSTALLER_IDENTITY" \
+            --keychain temp.keychain \
+            "$PKG" \
+            "${PKG%.pkg}-signed.pkg"
+
+          if [ ! -f "${PKG%.pkg}-signed.pkg" ]; then
+            echo "❌ ERROR: PKG signing failed - signed file not created"
+            exit 1
+          fi
+
+          mv "${PKG%.pkg}-signed.pkg" "$PKG"
           echo "✅ PKG signed successfully"
 
+          # Verify PKG signature
+          echo ""
+          echo "=== Verifying PKG Signature ==="
+          if pkgutil --check-signature "$PKG"; then
+            echo "✅ PKG signature is valid"
+          else
+            echo "❌ ERROR: PKG signature verification failed"
+            exit 1
+          fi
+
+          echo ""
           echo "=== Submitting for Notarization ==="
+
+          # Check if notarization credentials are set
+          if [ -z "${{ secrets.APPLE_ID }}" ] || [ -z "${{ secrets.APPLE_NOTARIZATION_PASSWORD }}" ] || [ -z "${{ secrets.APPLE_TEAM_ID }}" ]; then
+            echo "⚠️  Notarization credentials not set - skipping notarization"
+            echo "PKG is signed but not notarized"
+            echo "To enable notarization, set these secrets:"
+            echo "  - APPLE_ID"
+            echo "  - APPLE_NOTARIZATION_PASSWORD (app-specific password)"
+            echo "  - APPLE_TEAM_ID"
+            exit 0
+          fi
+
           SUBMISSION_OUTPUT=$(xcrun notarytool submit "$PKG" \
             --apple-id "${{ secrets.APPLE_ID }}" \
             --password "${{ secrets.APPLE_NOTARIZATION_PASSWORD }}" \
@@ -224,12 +307,11 @@ jobs:
           if echo "$SUBMISSION_OUTPUT" | grep -q "status: Accepted"; then
             echo "✅ Notarization accepted"
             xcrun stapler staple "$PKG"
-            echo "✅ Stapled notarization ticket"
+            echo "✅ Stapled notarization ticket to PKG"
           else
             echo "❌ Notarization failed or was rejected"
+            echo ""
             echo "Fetching detailed notarization log..."
-
-            # Get the detailed log
             xcrun notarytool log "$SUBMISSION_ID" \
               --apple-id "${{ secrets.APPLE_ID }}" \
               --password "${{ secrets.APPLE_NOTARIZATION_PASSWORD }}" \
