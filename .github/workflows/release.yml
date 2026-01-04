@@ -142,17 +142,62 @@ jobs:
             echo "Skipping signing/notarization - APPLE_DEVELOPER_ID not set"
             exit 0
           fi
+
+          echo "=== Verifying Binary Signature Before PKG Signing ==="
+          # Check if the binary was signed in the build script
+          BINARY="installers/macos/build/payload/usr/local/bin/allow2automate-agent"
+          if [ -f "$BINARY" ]; then
+            echo "Checking binary signature..."
+            if codesign --verify --verbose=2 "$BINARY" 2>&1; then
+              echo "✅ Binary is signed"
+              codesign --display --verbose=2 "$BINARY" 2>&1 | grep "Authority\|Identifier\|TeamIdentifier" || true
+            else
+              echo "❌ WARNING: Binary is NOT signed or signature is invalid!"
+              echo "This will cause notarization to fail."
+            fi
+          else
+            echo "❌ WARNING: Binary not found at expected location: $BINARY"
+          fi
+
+          echo "=== Signing PKG ==="
           PKG=$(find installers/macos/dist -name "*.pkg" | head -n 1)
+          echo "PKG to sign: $PKG"
+
           productsign --sign "${{ secrets.APPLE_DEVELOPER_ID }}" "$PKG" "${PKG%.pkg}-signed.pkg"
           mv "${PKG%.pkg}-signed.pkg" "$PKG"
 
-          xcrun notarytool submit "$PKG" \
+          echo "✅ PKG signed successfully"
+
+          echo "=== Submitting for Notarization ==="
+          SUBMISSION_OUTPUT=$(xcrun notarytool submit "$PKG" \
             --apple-id "${{ secrets.APPLE_ID }}" \
             --password "${{ secrets.APPLE_NOTARIZATION_PASSWORD }}" \
             --team-id "${{ secrets.APPLE_TEAM_ID }}" \
-            --wait
+            --wait 2>&1)
 
-          xcrun stapler staple "$PKG"
+          echo "$SUBMISSION_OUTPUT"
+
+          # Extract submission ID for log retrieval
+          SUBMISSION_ID=$(echo "$SUBMISSION_OUTPUT" | grep "id:" | head -1 | awk '{print $2}')
+          echo "Submission ID: $SUBMISSION_ID"
+
+          # Check if notarization succeeded
+          if echo "$SUBMISSION_OUTPUT" | grep -q "status: Accepted"; then
+            echo "✅ Notarization accepted"
+            xcrun stapler staple "$PKG"
+            echo "✅ Stapled notarization ticket"
+          else
+            echo "❌ Notarization failed or was rejected"
+            echo "Fetching detailed notarization log..."
+
+            # Get the detailed log
+            xcrun notarytool log "$SUBMISSION_ID" \
+              --apple-id "${{ secrets.APPLE_ID }}" \
+              --password "${{ secrets.APPLE_NOTARIZATION_PASSWORD }}" \
+              --team-id "${{ secrets.APPLE_TEAM_ID }}" || true
+
+            exit 1
+          fi
 
       # Linux Build and Sign
       - name: Install fpm (Linux)

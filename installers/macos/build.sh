@@ -65,7 +65,14 @@ chmod +x "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
 # Sign the binary if certificate is available (done in GitHub Actions)
 # This must be done BEFORE creating the PKG
 if [ -n "$APPLE_DEVELOPER_ID" ]; then
-    echo "Signing binary with identity (redacted): ${APPLE_DEVELOPER_ID:0:-1}-"
+    # Safely redact identity (handle short strings)
+    ID_LENGTH=${#APPLE_DEVELOPER_ID}
+    if [ "$ID_LENGTH" -gt 8 ]; then
+        REDACTED_ID="${APPLE_DEVELOPER_ID:0:8}...${APPLE_DEVELOPER_ID: -4}"
+    else
+        REDACTED_ID="***"
+    fi
+    echo "Signing binary with identity: $REDACTED_ID"
 
     # Determine keychain path (modern macOS uses -db suffix)
     KEYCHAIN_NAME="temp.keychain"
