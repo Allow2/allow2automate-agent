@@ -88,33 +88,66 @@ jobs:
           # Decode certificate
           echo "${{ secrets.APPLE_CERT_BASE64 }}" | base64 -d > certificate.p12
 
+          # Verify the .p12 file was created
+          if [ ! -f certificate.p12 ] || [ ! -s certificate.p12 ]; then
+            echo "❌ ERROR: certificate.p12 file is missing or empty"
+            exit 1
+          fi
+          echo "✅ Certificate file created (size: $(wc -c < certificate.p12) bytes)"
+
           # Create temporary keychain
           security create-keychain -p actions temp.keychain
           security set-keychain-settings -lut 21600 temp.keychain
           security default-keychain -s temp.keychain
           security unlock-keychain -p actions temp.keychain
 
-          # Import certificate with -A flag (allow any application access)
+          echo "=== Importing certificate and private key ==="
+          # Import certificate - IMPORTANT: Don't use -t cert for .p12 files!
+          # .p12 contains both cert and private key, let security auto-detect
+          # Use -T to explicitly allow codesign access
           security import certificate.p12 \
             -k temp.keychain \
             -P "${{ secrets.APPLE_CERT_PASSWORD }}" \
-            -A \
-            -t cert \
+            -T /usr/bin/codesign \
+            -T /usr/bin/productsign \
             -f pkcs12
 
+          echo "=== Verifying what was imported ==="
+          # Check what was actually imported
+          echo "Certificates in keychain:"
+          security find-certificate -a temp.keychain | grep -c "BEGIN CERTIFICATE" || echo "0"
+
+          echo "Private keys in keychain:"
+          security dump-keychain temp.keychain | grep -c "Imported Private Key" || echo "0"
+
           # CRITICAL: Set partition list with codesign: partition
+          # This allows codesign to access the private key without user interaction
           security set-key-partition-list \
             -S apple-tool:,apple:,codesign: \
             -s \
             -k actions \
             temp.keychain
 
-          # Add to keychain search list
-          security list-keychain -d user -s temp.keychain login.keychain
+          # Add to keychain search list (with full path including -db suffix)
+          security list-keychains -d user -s \
+            "$HOME/Library/Keychains/temp.keychain-db" \
+            "$HOME/Library/Keychains/login.keychain-db"
 
           # Verify identities are available
           echo "=== Verifying imported identities ==="
-          security find-identity -v temp.keychain
+          IDENTITY_COUNT=$(security find-identity -v -p codesigning temp.keychain 2>&1 | grep -E "^\s+[0-9]+\)" | wc -l | tr -d ' ')
+          echo "Found $IDENTITY_COUNT code signing identities"
+
+          security find-identity -v -p codesigning temp.keychain
+
+          if [ "$IDENTITY_COUNT" -eq 0 ]; then
+            echo "❌ ERROR: No valid code signing identities found after import!"
+            echo "Certificate details:"
+            security find-certificate -a -p temp.keychain | openssl x509 -noout -subject -dates -ext keyUsage -ext extendedKeyUsage 2>/dev/null || echo "Could not parse certificate"
+            exit 1
+          fi
+
+          echo "✅ Certificate import successful"
 
           # Cleanup
           rm certificate.p12
