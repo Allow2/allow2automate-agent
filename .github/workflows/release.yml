@@ -533,25 +533,25 @@ jobs:
           mkdir -p release-files
 
           # Windows
-          if [ -f artifacts/installer-windows/*.exe ]; then
+          if compgen -G "artifacts/installer-windows/*.exe" > /dev/null; then
             EXE=$(find artifacts/installer-windows -name "*.exe" | head -n 1)
             cp "$EXE" "release-files/allow2automate-agent-win-x64-${VERSION}.exe"
           fi
 
           # macOS
-          if [ -f artifacts/installer-macos/*.pkg ]; then
+          if compgen -G "artifacts/installer-macos/*.pkg" > /dev/null; then
             PKG=$(find artifacts/installer-macos -name "*.pkg" | head -n 1)
             cp "$PKG" "release-files/allow2automate-agent-darwin-x64-${VERSION}.pkg"
           fi
 
           # Linux DEB
-          if [ -f artifacts/installer-linux/*.deb ]; then
+          if compgen -G "artifacts/installer-linux/*.deb" > /dev/null; then
             DEB=$(find artifacts/installer-linux -name "*.deb" | head -n 1)
             cp "$DEB" "release-files/allow2automate-agent-linux-amd64-${VERSION}.deb"
           fi
 
           # Linux RPM
-          if [ -f artifacts/installer-linux/*.rpm ]; then
+          if compgen -G "artifacts/installer-linux/*.rpm" > /dev/null; then
             RPM=$(find artifacts/installer-linux -name "*.rpm" | head -n 1)
             cp "$RPM" "release-files/allow2automate-agent-linux-x86_64-${VERSION}.rpm"
           fi
