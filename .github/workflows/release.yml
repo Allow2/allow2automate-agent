@@ -179,18 +179,55 @@ jobs:
           # Verify all identities
           echo ""
           echo "=== Final Identity Verification ==="
+
+          echo "All identities in keychain (no filter):"
+          security find-identity -v temp.keychain | sed 's/\("[^"]*"\)/"***"/g'
+
+          echo ""
           echo "Code signing identities:"
           security find-identity -v -p codesigning temp.keychain | sed 's/\("[^"]*"\)/"***"/g'
+
+          echo ""
+          echo "Checking certificate details..."
+
+          # Get all certificates and check their extended key usage
+          CERT_COUNT=$(security find-certificate -a temp.keychain | grep -c "BEGIN CERTIFICATE" || echo "0")
+          echo "Total certificates in keychain: $CERT_COUNT"
+
+          # Check each certificate's purpose
+          security find-certificate -a -p temp.keychain | while read -r line; do
+            if [[ "$line" == "-----BEGIN CERTIFICATE-----" ]]; then
+              cert_data="$line"
+            elif [[ "$line" == "-----END CERTIFICATE-----" ]]; then
+              cert_data+=$'\n'"$line"
+              echo "$cert_data" | openssl x509 -noout -subject -ext extendedKeyUsage 2>/dev/null || true
+              echo "---"
+              cert_data=""
+            else
+              cert_data+=$'\n'"$line"
+            fi
+          done
 
           APP_IDENTITY_COUNT=$(security find-identity -v -p codesigning temp.keychain 2>&1 | grep -c "Developer ID Application" || echo "0")
           INSTALLER_IDENTITY_COUNT=$(security find-identity -v -p codesigning temp.keychain 2>&1 | grep -c "Developer ID Installer" || echo "0")
 
-          echo "Found $APP_IDENTITY_COUNT Application identity(ies)"
-          echo "Found $INSTALLER_IDENTITY_COUNT Installer identity(ies)"
+          echo ""
+          echo "Identity counts:"
+          echo "  Application identities: $APP_IDENTITY_COUNT"
+          echo "  Installer identities: $INSTALLER_IDENTITY_COUNT"
 
           if [ "$APP_IDENTITY_COUNT" -eq 0 ] && [ "$INSTALLER_IDENTITY_COUNT" -eq 0 ]; then
+            echo ""
             echo "❌ ERROR: No valid signing identities found!"
-            echo "Please check your certificate exports."
+            echo ""
+            echo "Troubleshooting:"
+            echo "1. Verify certificates were exported WITH private keys"
+            echo "2. Check that both .p12 files contain 'Developer ID' certificates"
+            echo "3. Ensure the password is correct"
+            echo ""
+            echo "To verify your .p12 files locally:"
+            echo "  openssl pkcs12 -in app_cert.p12 -info -nodes"
+            echo "  openssl pkcs12 -in installer_cert.p12 -info -nodes"
             exit 1
           fi
 
@@ -242,13 +279,52 @@ jobs:
           echo "PKG to sign: $PKG"
 
           # Find the Developer ID Installer identity
+          echo "Searching for Developer ID Installer identity..."
           INSTALLER_IDENTITY=$(security find-identity -v -p codesigning temp.keychain 2>&1 | grep "Developer ID Installer" | head -1 | awk '{print $2}')
 
           if [ -z "$INSTALLER_IDENTITY" ]; then
-            echo "❌ ERROR: No Developer ID Installer identity found in keychain"
-            echo "Available identities:"
-            security find-identity -v -p codesigning temp.keychain
-            exit 1
+            echo "⚠️  No 'Developer ID Installer' found by name"
+            echo ""
+            echo "Available identities in keychain:"
+            security find-identity -v temp.keychain | sed 's/\("[^"]*"\)/"***"/g'
+
+            echo ""
+            echo "Checking if any identity can sign PKG files..."
+
+            # Try to find any identity that might work
+            # Sometimes the Installer cert doesn't show up with grep but exists
+            ALL_IDENTITIES=$(security find-identity -v temp.keychain 2>&1 | grep -E '^\s+[0-9]+\)' | awk '{print $2}')
+
+            for identity in $ALL_IDENTITIES; do
+              echo "Testing identity: ${identity:0:8}...${identity: -4}"
+
+              # Try to sign with this identity (test only)
+              if productsign --sign "$identity" --keychain temp.keychain "$PKG" /tmp/test-sign.pkg 2>&1; then
+                echo "✅ Found working identity: ${identity:0:8}...${identity: -4}"
+                INSTALLER_IDENTITY="$identity"
+                rm -f /tmp/test-sign.pkg
+                break
+              else
+                echo "   Not suitable for PKG signing"
+                rm -f /tmp/test-sign.pkg
+              fi
+            done
+
+            if [ -z "$INSTALLER_IDENTITY" ]; then
+              echo ""
+              echo "❌ ERROR: No identity found that can sign PKG files"
+              echo ""
+              echo "This usually means:"
+              echo "1. The APPLE_INSTALLER_CERT_BASE64 secret contains the wrong certificate"
+              echo "2. The certificate was exported without its private key"
+              echo "3. The certificate password is incorrect"
+              echo ""
+              echo "Please verify your installer certificate export:"
+              echo "  security find-identity -v -p codesigning | grep Installer"
+              echo "  security export -k login.keychain -t identities -f pkcs12 \\"
+              echo "    -o installer_cert.p12 'Developer ID Installer: Your Company'"
+              exit 1
+            fi
           fi
 
           echo "Using installer identity: ${INSTALLER_IDENTITY:0:8}...${INSTALLER_IDENTITY: -4}"
