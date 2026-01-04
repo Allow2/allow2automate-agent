@@ -551,6 +551,11 @@ jobs:
           # Copy signature files
           find artifacts -name "*.asc" -exec cp {} release-files/ \; 2>/dev/null || true
 
+          # Copy uninstall scripts
+          cp installers/macos/uninstall.sh "release-files/allow2automate-agent-macos-uninstall.sh"
+          cp installers/linux/uninstall.sh "release-files/allow2automate-agent-linux-uninstall.sh"
+          cp installers/windows/uninstall.bat "release-files/allow2automate-agent-windows-uninstall.bat"
+
           # Show what we copied
           echo "=== Files in release-files directory ==="
           ls -lh release-files/
