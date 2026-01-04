@@ -532,32 +532,28 @@ jobs:
           VERSION="${{ steps.version.outputs.VERSION }}"
           mkdir -p release-files
 
+          # Debug: Show artifact structure
+          echo "=== Artifact directory structure ==="
+          ls -laR artifacts/
+
           # Windows
-          if compgen -G "artifacts/installer-windows/*.exe" > /dev/null; then
-            EXE=$(find artifacts/installer-windows -name "*.exe" | head -n 1)
-            cp "$EXE" "release-files/allow2automate-agent-win-x64-${VERSION}.exe"
-          fi
+          find artifacts/installer-windows -name "*.exe" 2>/dev/null | head -n 1 | xargs -I {} cp {} "release-files/allow2automate-agent-win-x64-${VERSION}.exe"
 
           # macOS
-          if compgen -G "artifacts/installer-macos/*.pkg" > /dev/null; then
-            PKG=$(find artifacts/installer-macos -name "*.pkg" | head -n 1)
-            cp "$PKG" "release-files/allow2automate-agent-darwin-x64-${VERSION}.pkg"
-          fi
+          find artifacts/installer-macos -name "*.pkg" 2>/dev/null | head -n 1 | xargs -I {} cp {} "release-files/allow2automate-agent-darwin-x64-${VERSION}.pkg"
 
           # Linux DEB
-          if compgen -G "artifacts/installer-linux/*.deb" > /dev/null; then
-            DEB=$(find artifacts/installer-linux -name "*.deb" | head -n 1)
-            cp "$DEB" "release-files/allow2automate-agent-linux-amd64-${VERSION}.deb"
-          fi
+          find artifacts/installer-linux -name "*.deb" 2>/dev/null | head -n 1 | xargs -I {} cp {} "release-files/allow2automate-agent-linux-amd64-${VERSION}.deb"
 
           # Linux RPM
-          if compgen -G "artifacts/installer-linux/*.rpm" > /dev/null; then
-            RPM=$(find artifacts/installer-linux -name "*.rpm" | head -n 1)
-            cp "$RPM" "release-files/allow2automate-agent-linux-x86_64-${VERSION}.rpm"
-          fi
+          find artifacts/installer-linux -name "*.rpm" 2>/dev/null | head -n 1 | xargs -I {} cp {} "release-files/allow2automate-agent-linux-x86_64-${VERSION}.rpm"
 
           # Copy signature files
-          cp artifacts/installer-*/*.asc release-files/ 2>/dev/null || true
+          find artifacts -name "*.asc" -exec cp {} release-files/ \; 2>/dev/null || true
+
+          # Show what we copied
+          echo "=== Files in release-files directory ==="
+          ls -lh release-files/
 
       - name: Generate checksums
         run: |
