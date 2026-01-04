@@ -93,7 +93,22 @@ jobs:
             echo "❌ ERROR: certificate.p12 file is missing or empty"
             exit 1
           fi
-          echo "✅ Certificate file created (size: $(wc -c < certificate.p12) bytes)"
+          FILE_SIZE=$(wc -c < certificate.p12)
+          echo "✅ Certificate file created (size: $FILE_SIZE bytes)"
+
+          # Verify the .p12 file contents
+          echo "=== Verifying .p12 file contents ==="
+          if openssl pkcs12 -in certificate.p12 -nokeys -passin pass:"${{ secrets.APPLE_CERT_PASSWORD }}" 2>/dev/null | grep -q "BEGIN CERTIFICATE"; then
+            echo "✅ .p12 contains certificate(s)"
+          else
+            echo "❌ WARNING: No certificates found in .p12 file"
+          fi
+
+          if openssl pkcs12 -in certificate.p12 -nocerts -passin pass:"${{ secrets.APPLE_CERT_PASSWORD }}" 2>/dev/null | grep -q "BEGIN"; then
+            echo "✅ .p12 contains private key"
+          else
+            echo "❌ WARNING: No private key found in .p12 file"
+          fi
 
           # Create temporary keychain
           security create-keychain -p actions temp.keychain
@@ -102,15 +117,13 @@ jobs:
           security unlock-keychain -p actions temp.keychain
 
           echo "=== Importing certificate and private key ==="
-          # Import certificate - IMPORTANT: Don't use -t cert for .p12 files!
-          # .p12 contains both cert and private key, let security auto-detect
-          # Use -T to explicitly allow codesign access
+          # Import certificate - remove ALL type flags, just import the .p12 as-is
+          # The .p12 contains both cert and private key, and they need to be linked
+          # -A allows all applications to access without prompting
           security import certificate.p12 \
             -k temp.keychain \
             -P "${{ secrets.APPLE_CERT_PASSWORD }}" \
-            -T /usr/bin/codesign \
-            -T /usr/bin/productsign \
-            -f pkcs12
+            -A
 
           echo "=== Verifying what was imported ==="
           # Check what was actually imported
