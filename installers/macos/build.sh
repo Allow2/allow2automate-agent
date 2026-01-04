@@ -103,14 +103,29 @@ if [ -n "$APPLE_DEVELOPER_ID" ]; then
         echo "=== Checking available identities ==="
 
         echo "Identities in temp.keychain:"
-        TEMP_COUNT=$(security find-identity -v -p codesigning "$KEYCHAIN_NAME" 2>&1 | grep -c "valid identities found" || echo "0")
-        security find-identity -v -p codesigning "$KEYCHAIN_NAME" 2>&1 | sed 's/\(.*\)./\1-/'
+        TEMP_OUTPUT=$(security find-identity -v -p codesigning "$KEYCHAIN_NAME" 2>&1)
+        echo "$TEMP_OUTPUT" | sed 's/\("[^"]*"\)/"***"/g'  # Redact identity names
+        TEMP_COUNT=$(echo "$TEMP_OUTPUT" | grep -E "^\s+[0-9]+\)" | wc -l | tr -d ' ')
 
         echo "All available identities (all keychains):"
-        ALL_COUNT=$(security find-identity -v -p codesigning 2>&1 | grep -c "valid identities found" || echo "0")
-        security find-identity -v -p codesigning 2>&1 | sed 's/\(.*\)./\1-/'
+        ALL_OUTPUT=$(security find-identity -v -p codesigning 2>&1)
+        echo "$ALL_OUTPUT" | sed 's/\("[^"]*"\)/"***"/g'  # Redact identity names
+        ALL_COUNT=$(echo "$ALL_OUTPUT" | grep -E "^\s+[0-9]+\)" | wc -l | tr -d ' ')
 
         echo "Identity count check: temp=$TEMP_COUNT, all=$ALL_COUNT"
+
+        # If no identities found, show detailed error
+        if [ "$TEMP_COUNT" -eq 0 ]; then
+            echo "❌ ERROR: No signing identities found in temp.keychain!"
+            echo "This means the certificate import failed or the certificate doesn't contain a code signing identity."
+            echo "Checking certificate import details..."
+            security find-certificate -a -p "$KEYCHAIN_NAME" | openssl x509 -noout -subject -ext keyUsage -ext extendedKeyUsage 2>/dev/null || echo "Could not read certificate details"
+            exit 1
+        fi
+
+        # Extract the actual identity hash from the keychain (first valid identity)
+        IDENTITY_HASH=$(echo "$TEMP_OUTPUT" | grep -E "^\s+[0-9]+\)" | head -1 | awk '{print $2}')
+        echo "Using identity hash from keychain: ${IDENTITY_HASH:0:8}...${IDENTITY_HASH: -4}"
     else
         echo "❌ ERROR: Temp keychain not found at $KEYCHAIN_PATH"
         echo "Searching for keychain files..."
@@ -124,8 +139,18 @@ if [ -n "$APPLE_DEVELOPER_ID" ]; then
 
     # Perform codesigning - explicitly use temp keychain
     echo "Attempting to sign binary..."
+
+    # Use the identity hash from the keychain if we found one, otherwise try APPLE_DEVELOPER_ID
+    if [ -n "$IDENTITY_HASH" ]; then
+        SIGN_IDENTITY="$IDENTITY_HASH"
+        echo "Using identity hash: ${IDENTITY_HASH:0:8}...${IDENTITY_HASH: -4}"
+    else
+        SIGN_IDENTITY="$APPLE_DEVELOPER_ID"
+        echo "Using APPLE_DEVELOPER_ID: $REDACTED_ID"
+    fi
+
     codesign --force --options runtime \
-        --sign "$APPLE_DEVELOPER_ID" \
+        --sign "$SIGN_IDENTITY" \
         --keychain "$KEYCHAIN_PATH" \
         --timestamp \
         "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
