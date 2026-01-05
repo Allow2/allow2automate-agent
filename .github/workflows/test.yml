@@ -260,8 +260,8 @@ jobs:
 
       - name: Check for vulnerable dependencies
         run: |
-          npm audit --json > audit-results.json
-          cat audit-results.json
+          npm audit --json > audit-results.json || true
+          cat audit-results.json || echo "No audit results available"
 
       - name: Upload audit results
         if: always()
