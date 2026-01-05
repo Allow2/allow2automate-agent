@@ -67,7 +67,7 @@ jobs:
         run: npm run build:windows
 
       - name: Upload Windows installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: windows-installer
           path: installers/windows/dist/*.msi
@@ -95,7 +95,7 @@ jobs:
         run: npm run build:macos
 
       - name: Upload macOS installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: macos-installer
           path: installers/macos/dist/*.pkg
@@ -134,14 +134,14 @@ jobs:
           bash build-rpm.sh
 
       - name: Upload Linux DEB package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: linux-deb-installer
           path: installers/linux/dist/*.deb
           retention-days: 30
 
       - name: Upload Linux RPM package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: linux-rpm-installer
           path: installers/linux/dist/*.rpm

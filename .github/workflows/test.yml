@@ -45,7 +45,7 @@ jobs:
 
       - name: Upload Windows test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: windows-test-results
           path: coverage/
@@ -85,7 +85,7 @@ jobs:
 
       - name: Upload macOS test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: macos-test-results
           path: coverage/
@@ -125,7 +125,7 @@ jobs:
 
       - name: Upload Linux test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: linux-test-results
           path: coverage/
@@ -265,7 +265,7 @@ jobs:
 
       - name: Upload audit results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: security-audit
           path: audit-results.json
