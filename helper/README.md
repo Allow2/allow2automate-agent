@@ -46,6 +46,12 @@ The helper is automatically installed with the main agent and configured to run 
 - Location: `C:\Program Files\Allow2\AgentHelper\allow2-agent-helper.exe`
 - Autostart: Startup folder shortcut
 
+## Dependencies
+
+- **node-notifier** (^10.0.1) - Cross-platform desktop notifications
+- **systray** (^1.0.5) - System tray icon support
+- **node-fetch** (^3.3.0) - HTTP client for API communication
+
 ## Features
 
 ### System Tray Icon

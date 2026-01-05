@@ -66,7 +66,7 @@ This solves the fundamental problem that system services cannot display GUI elem
 ```json
 {
   "node-notifier": "^10.0.1",  // Cross-platform notifications
-  "systray2": "^3.1.0",         // System tray icon
+  "systray": "^1.0.5",          // System tray icon
   "node-fetch": "^3.3.0"        // HTTP client
 }
 ```

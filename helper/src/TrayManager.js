@@ -1,9 +1,9 @@
 /**
  * System Tray Manager
- * Manages the system tray icon and menu using systray2
+ * Manages the system tray icon and menu using systray
  */
 
-import SysTray from 'systray2';
+import SysTray from 'systray';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
