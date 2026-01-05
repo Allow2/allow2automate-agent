@@ -37,6 +37,23 @@ fi
 echo "Using binary: $BINARY"
 cp "$BINARY" "$DIST_DIR/allow2automate-agent-${VERSION}.exe"
 
-echo "✅ Windows binary created: $DIST_DIR/allow2automate-agent-${VERSION}.exe"
-echo "   Note: For full MSI installer, WiX Toolset integration needed"
+# Build helper application
+echo "Building helper application..."
+cd helper
+bash build.sh
+cd ..
+
+# Copy helper binary
+echo "Including helper binary in package..."
+cp helper/dist/allow2automate-agent-helper-win.exe "$DIST_DIR/allow2automate-agent-helper-${VERSION}.exe"
+
+# Copy helper autostart scripts
+cp helper/autostart/windows/install-autostart.bat "$DIST_DIR/"
+cp helper/autostart/windows/remove-autostart.bat "$DIST_DIR/"
+
+echo "✅ Windows binaries created:"
+echo "   - Main agent: $DIST_DIR/allow2automate-agent-${VERSION}.exe"
+echo "   - Helper: $DIST_DIR/allow2automate-agent-helper-${VERSION}.exe"
+echo "   - Autostart scripts: install-autostart.bat, remove-autostart.bat"
+echo "   Note: For full MSI installer with autostart, WiX Toolset integration needed"
 ls -lh "$DIST_DIR"/*.exe

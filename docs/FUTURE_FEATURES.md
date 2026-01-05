@@ -4,10 +4,10 @@ This document outlines planned features for the Allow2 Automate Agent.
 
 ## Local Toast/Alert Notifications
 
-**Status**: Planned (not yet implemented)
+**Status**: ✅ IMPLEMENTED (User Helper v1.0)
 
 **Description**:
-The agent will gain the ability to display toast-style notifications and alerts directly on the monitored computer. This will provide real-time feedback to the child/user about policy enforcement actions, warnings, and other important events.
+The agent now includes a user-space helper application that displays toast-style notifications and system tray status. The helper runs in the user's session and communicates with the main agent service via localhost HTTP.
 
 ### Use Cases
 
@@ -45,18 +45,29 @@ The agent will gain the ability to display toast-style notifications and alerts 
    - Actionable when possible
    - Respectful and non-patronizing
 
-### Implementation Notes
+### Implementation
 
-This feature will require:
-- Platform-specific notification APIs
-- Message templating system
-- Parent-configurable settings for notification preferences
+The notification system is implemented via the **Agent Helper** (`helper/` directory):
+
+**Components:**
+- `TrayManager.js` - System tray icon with status colors (green/yellow/red)
+- `NotificationManager.js` - Desktop notifications using `node-notifier`
+- `AgentMonitor.js` - Polls main agent at `/api/helper/status`
+
+**Currently Implemented:**
+- ✅ System tray icon with connection status
+- ✅ Desktop notifications for connection changes
+- ✅ Status viewing and issue reporting
+- ✅ Automatic startup on user login
+- ✅ Cross-platform support (macOS, Linux, Windows)
+
+**Future Enhancements:**
+- Message templating system for policy violations
+- Parent-configurable notification preferences
 - Respect for OS do-not-disturb/focus modes
 - Localization support for multiple languages
-
-### Timeline
-
-To be determined. This feature will be designed and implemented in a future sprint after the core agent refactor is complete.
+- Time warning notifications (e.g., "10 minutes remaining")
+- Process termination explanations
 
 ---
 

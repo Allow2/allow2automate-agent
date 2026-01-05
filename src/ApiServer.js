@@ -85,6 +85,72 @@ class ApiServer {
       }
     });
 
+    // Helper status endpoint (no auth required - localhost only)
+    this.app.get('/api/helper/status', (req, res) => {
+      try {
+        const isConfigured = this.configManager.isConfigured();
+        const parentUrl = this.configManager.get('parentApiUrl');
+        const agentId = this.configManager.get('agentId');
+        const lastHeartbeat = this.policyEngine.getLastSyncTime();
+
+        // Check if we've successfully connected to parent recently
+        const now = Date.now();
+        const lastSync = lastHeartbeat ? new Date(lastHeartbeat).getTime() : 0;
+        const timeSinceSync = now - lastSync;
+        const parentConnected = isConfigured && timeSinceSync < 120000; // Connected if synced in last 2 minutes
+
+        res.json({
+          connected: true,
+          parentConnected,
+          parentUrl: parentUrl || null,
+          agentId: agentId || null,
+          hostname: os.hostname(),
+          version: this.configManager.get('version') || '1.0.0',
+          uptime: Math.floor(process.uptime()),
+          lastHeartbeat: lastHeartbeat || null,
+          configured: isConfigured,
+          monitoringActive: this.processMonitor.isRunning,
+          errors: []
+        });
+      } catch (error) {
+        this.logger.error('Helper status error', { error: error.message });
+        res.status(500).json({
+          connected: true,
+          parentConnected: false,
+          errors: [{
+            type: 'status_error',
+            message: error.message
+          }]
+        });
+      }
+    });
+
+    // Helper command endpoint (no auth required - localhost only)
+    this.app.post('/api/helper/command', async (req, res) => {
+      try {
+        const { command, params } = req.body;
+
+        switch (command) {
+          case 'sync':
+            await this.policyEngine.syncFromParent();
+            res.json({ success: true, message: 'Policies synced' });
+            break;
+
+          case 'restart_monitoring':
+            await this.processMonitor.stop();
+            await this.processMonitor.start();
+            res.json({ success: true, message: 'Monitoring restarted' });
+            break;
+
+          default:
+            res.status(400).json({ error: 'Unknown command' });
+        }
+      } catch (error) {
+        this.logger.error('Helper command error', { error: error.message });
+        res.status(500).json({ error: error.message });
+      }
+    });
+
     // All routes below require authentication
     this.app.use('/api', this.authenticateJWT.bind(this));
 

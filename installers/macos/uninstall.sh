@@ -19,8 +19,9 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo "This will remove:"
-echo "  - LaunchDaemon service"
-echo "  - Binary at /usr/local/bin/allow2automate-agent"
+echo "  - LaunchDaemon service (main agent)"
+echo "  - LaunchAgent (user helper)"
+echo "  - Binaries at /usr/local/bin/"
 echo "  - Configuration files"
 echo "  - Log files"
 echo ""
@@ -33,17 +34,29 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 echo ""
-echo "Stopping service..."
+echo "Stopping main agent service..."
 launchctl stop com.allow2.automate-agent 2>/dev/null || echo "Service not running"
 
 echo "Unloading LaunchDaemon..."
 launchctl unload /Library/LaunchDaemons/com.allow2.automate-agent.plist 2>/dev/null || echo "LaunchDaemon not loaded"
 
+echo "Stopping helper for all users..."
+for user_home in /Users/*; do
+    username=$(basename "$user_home")
+    if [ "$username" != "Shared" ]; then
+        sudo -u "$username" launchctl unload /Library/LaunchAgents/com.allow2.agent-helper.plist 2>/dev/null || true
+    fi
+done
+
 echo "Removing files..."
 rm -f /Library/LaunchDaemons/com.allow2.automate-agent.plist
+rm -f /Library/LaunchAgents/com.allow2.agent-helper.plist
 rm -f /usr/local/bin/allow2automate-agent
+rm -f /usr/local/bin/allow2automate-agent-helper
 rm -f /var/log/allow2automate-agent.log
 rm -f /var/log/allow2automate-agent-error.log
+rm -f /tmp/allow2-agent-helper.log
+rm -f /tmp/allow2-agent-helper-error.log
 
 # Remove config directory if it exists
 if [ -d "$HOME/.allow2automate" ]; then

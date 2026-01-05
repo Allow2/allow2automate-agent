@@ -19,8 +19,9 @@ if %errorLevel% neq 0 (
 )
 
 echo This will remove:
-echo   - Windows Service
-echo   - Binary at C:\Program Files\Allow2\allow2automate-agent.exe
+echo   - Windows Service (main agent)
+echo   - User helper and autostart
+echo   - Binaries at C:\Program Files\Allow2\
 echo   - Configuration files
 echo   - Log files
 echo.
@@ -32,7 +33,7 @@ if /i not "%confirm%"=="y" (
 )
 
 echo.
-echo Stopping service...
+echo Stopping main agent service...
 sc stop Allow2AutomateAgent >nul 2>&1
 if %errorLevel% neq 0 echo Service not running
 
@@ -40,13 +41,18 @@ echo Deleting service...
 sc delete Allow2AutomateAgent >nul 2>&1
 if %errorLevel% neq 0 echo Service not registered
 
+echo Removing helper autostart...
+del /f /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Allow2 Agent Helper.lnk" 2>nul
+
 echo Removing files...
 del /f /q "C:\Program Files\Allow2\allow2automate-agent.exe" 2>nul
+del /f /q "C:\Program Files\Allow2\AgentHelper\allow2automate-agent-helper.exe" 2>nul
+rmdir /s /q "C:\Program Files\Allow2\AgentHelper" 2>nul
 rmdir /s /q "C:\Program Files\Allow2" 2>nul
 del /f /q "C:\ProgramData\Allow2\*.log" 2>nul
 rmdir /s /q "C:\ProgramData\Allow2" 2>nul
 
 echo.
-echo ✓ Allow2 Automate Agent has been successfully uninstalled.
+echo ✓ Allow2 Automate Agent and Helper have been successfully uninstalled.
 echo.
 pause

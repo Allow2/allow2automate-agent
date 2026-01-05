@@ -19,8 +19,9 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo "This will remove:"
-echo "  - Systemd service"
-echo "  - Binary at /usr/local/bin/allow2automate-agent"
+echo "  - Systemd service (main agent)"
+echo "  - User helper autostart"
+echo "  - Binaries at /usr/local/bin/"
 echo "  - Configuration files"
 echo "  - Log files"
 echo ""
@@ -33,7 +34,7 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 echo ""
-echo "Stopping service..."
+echo "Stopping main agent service..."
 systemctl stop allow2automate-agent 2>/dev/null || echo "Service not running"
 
 echo "Disabling service..."
@@ -41,7 +42,10 @@ systemctl disable allow2automate-agent 2>/dev/null || echo "Service not enabled"
 
 echo "Removing files..."
 rm -f /etc/systemd/system/allow2automate-agent.service
+rm -f /lib/systemd/system/allow2automate-agent.service
 rm -f /usr/local/bin/allow2automate-agent
+rm -f /usr/local/bin/allow2automate-agent-helper
+rm -f /etc/xdg/autostart/allow2-agent-helper.desktop
 rm -f /var/log/allow2automate-agent.log
 rm -f /var/log/allow2automate-agent-error.log
 
@@ -55,5 +59,6 @@ echo "Reloading systemd..."
 systemctl daemon-reload
 
 echo ""
-echo "✅ Allow2 Automate Agent has been successfully uninstalled."
+echo "✅ Allow2 Automate Agent and Helper have been successfully uninstalled."
+echo "Note: Helper will stop running after user logout/restart."
 echo ""

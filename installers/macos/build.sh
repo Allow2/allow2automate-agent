@@ -163,6 +163,35 @@ else
     echo "⚠️  APPLE_DEVELOPER_ID not set - binary will not be signed"
 fi
 
+# Build helper application
+echo "Building helper application..."
+cd helper
+bash build.sh
+cd ..
+
+# Copy helper binary to payload
+echo "Including helper binary in package..."
+mkdir -p "$PAYLOAD_DIR/usr/local/bin"
+cp helper/dist/allow2automate-agent-helper-macos "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent-helper"
+chmod +x "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent-helper"
+
+# Copy helper LaunchAgent plist
+mkdir -p "$PAYLOAD_DIR/Library/LaunchAgents"
+cp helper/autostart/macos/com.allow2.agent-helper.plist "$PAYLOAD_DIR/Library/LaunchAgents/"
+
+# Sign helper binary if certificate available
+if [ -n "$APPLE_DEVELOPER_ID" ] && [ -n "$IDENTITY_HASH" ]; then
+    echo "Signing helper binary..."
+    codesign --force --options runtime \
+        --sign "$SIGN_IDENTITY" \
+        --keychain "$KEYCHAIN_PATH" \
+        --timestamp \
+        "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent-helper"
+
+    echo "✅ Verifying helper signature..."
+    codesign --verify --verbose=4 "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent-helper"
+fi
+
 # Create LaunchDaemon plist
 cat > "$PAYLOAD_DIR/Library/LaunchDaemons/com.allow2.automate-agent.plist" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -190,9 +219,18 @@ EOF
 # Create postinstall script
 cat > "$SCRIPTS_DIR/postinstall" << 'SCRIPT'
 #!/bin/bash
+# Start main agent service (system-wide)
 launchctl load /Library/LaunchDaemons/com.allow2.automate-agent.plist 2>/dev/null || true
 launchctl start com.allow2.automate-agent 2>/dev/null || true
+
+# Start helper for current user
+CURRENT_USER=$(stat -f%Su /dev/console)
+if [ -n "$CURRENT_USER" ] && [ "$CURRENT_USER" != "root" ]; then
+    sudo -u "$CURRENT_USER" launchctl load /Library/LaunchAgents/com.allow2.agent-helper.plist 2>/dev/null || true
+fi
+
 echo "Allow2 Automate Agent installed successfully"
+echo "Helper will start automatically on next login"
 exit 0
 SCRIPT
 chmod +x "$SCRIPTS_DIR/postinstall"
@@ -200,8 +238,18 @@ chmod +x "$SCRIPTS_DIR/postinstall"
 # Create preinstall script
 cat > "$SCRIPTS_DIR/preinstall" << 'SCRIPT'
 #!/bin/bash
+# Stop main agent service
 launchctl stop com.allow2.automate-agent 2>/dev/null || true
 launchctl unload /Library/LaunchDaemons/com.allow2.automate-agent.plist 2>/dev/null || true
+
+# Stop helper for all users
+for user_home in /Users/*; do
+    username=$(basename "$user_home")
+    if [ "$username" != "Shared" ]; then
+        sudo -u "$username" launchctl unload /Library/LaunchAgents/com.allow2.agent-helper.plist 2>/dev/null || true
+    fi
+done
+
 exit 0
 SCRIPT
 chmod +x "$SCRIPTS_DIR/preinstall"

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Allow2 Agent Helper
+Comment=System tray and notifications for Allow2 parental controls
+Exec=/usr/local/bin/allow2automate-agent-helper
+Icon=allow2-agent-helper
+Terminal=false
+Categories=Utility;System;
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-after=panel
+X-MATE-Autostart-enabled=true
+Hidden=false
+NoDisplay=false

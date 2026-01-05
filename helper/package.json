@@ -1,0 +1,37 @@
+{
+  "name": "@allow2/automate-agent-helper",
+  "version": "1.0.0",
+  "description": "User-space helper for Allow2 Automate Agent - system tray and notifications",
+  "main": "src/index.js",
+  "type": "module",
+  "bin": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "start:dev": "NODE_ENV=development node src/index.js",
+    "build": "pkg . --out-path dist",
+    "build:all": "pkg . --targets node18-linux-x64,node18-macos-x64,node18-win-x64 --out-path dist"
+  },
+  "pkg": {
+    "targets": ["node18-linux-x64", "node18-macos-x64", "node18-win-x64"],
+    "outputPath": "dist",
+    "assets": [
+      "src/assets/**/*"
+    ]
+  },
+  "keywords": [
+    "parental-controls",
+    "system-tray",
+    "notifications",
+    "allow2"
+  ],
+  "author": "Allow2",
+  "license": "MIT",
+  "dependencies": {
+    "node-fetch": "^3.3.0",
+    "node-notifier": "^10.0.1",
+    "systray2": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

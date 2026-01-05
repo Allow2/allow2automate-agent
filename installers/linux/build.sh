@@ -58,6 +58,21 @@ echo "Using binary: $BINARY"
 cp "$BINARY" "$BUILD_DIR/usr/local/bin/allow2automate-agent"
 chmod +x "$BUILD_DIR/usr/local/bin/allow2automate-agent"
 
+# Build helper application
+echo "Building helper application..."
+cd helper
+bash build.sh
+cd ..
+
+# Copy helper binary
+echo "Including helper binary in package..."
+cp helper/dist/allow2automate-agent-helper-linux "$BUILD_DIR/usr/local/bin/allow2automate-agent-helper"
+chmod +x "$BUILD_DIR/usr/local/bin/allow2automate-agent-helper"
+
+# Copy helper autostart file
+mkdir -p "$BUILD_DIR/etc/xdg/autostart"
+cp helper/autostart/linux/allow2-agent-helper.desktop "$BUILD_DIR/etc/xdg/autostart/"
+
 # Create systemd service
 cat > "$BUILD_DIR/lib/systemd/system/allow2automate-agent.service" << EOF
 [Unit]
@@ -79,10 +94,13 @@ EOF
 # Create postinstall script
 cat > "installers/linux/postinst.sh" << 'SCRIPT'
 #!/bin/bash
+# Start main agent service
 systemctl daemon-reload
 systemctl enable allow2automate-agent.service
 systemctl start allow2automate-agent.service
+
 echo "✅ Allow2 Automate Agent installed and started"
+echo "Helper will start automatically on next user login"
 exit 0
 SCRIPT
 chmod +x installers/linux/postinst.sh
