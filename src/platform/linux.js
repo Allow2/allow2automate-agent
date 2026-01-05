@@ -156,5 +156,124 @@ export default {
     } catch (error) {
       return null;
     }
+  },
+
+  /**
+   * Get current logged-in user information
+   */
+  async getCurrentUser() {
+    try {
+      // Try to get X11/Wayland desktop session user
+      let username = null;
+
+      // Method 1: Check who is logged into display :0 (X11)
+      try {
+        const { stdout: whoOut } = await execPromise('who | grep "(:0)" | awk \'{print $1}\' | head -1');
+        username = whoOut.trim();
+      } catch (error) {
+        // Try loginctl as fallback
+      }
+
+      // Method 2: Use loginctl to find graphical session
+      if (!username) {
+        try {
+          const { stdout: sessionsOut } = await execPromise('loginctl list-sessions --no-legend');
+          const sessions = sessionsOut.split('\n').filter(l => l.trim());
+
+          for (const session of sessions) {
+            const sessionId = session.trim().split(/\s+/)[0];
+            const { stdout: sessionInfo } = await execPromise(`loginctl show-session ${sessionId} -p Type -p Name --value`);
+            const [type, user] = sessionInfo.trim().split('\n');
+
+            if (type === 'x11' || type === 'wayland') {
+              username = user;
+              break;
+            }
+          }
+        } catch (error) {
+          // Fallback below
+        }
+      }
+
+      // Method 3: Just get first logged-in user
+      if (!username) {
+        const { stdout: whoOut } = await execPromise('who | awk \'{print $1}\' | head -1');
+        username = whoOut.trim();
+      }
+
+      if (!username) {
+        return null; // No user logged in
+      }
+
+      // Get user ID
+      let userId = null;
+      try {
+        const { stdout: uidOut } = await execPromise(`id -u ${username}`);
+        userId = uidOut.trim();
+      } catch (error) {
+        userId = null;
+      }
+
+      // Get full name from /etc/passwd
+      let accountName = username;
+      try {
+        const { stdout: passwdOut } = await execPromise(`getent passwd ${username}`);
+        const parts = passwdOut.split(':');
+        if (parts.length >= 5) {
+          const gecos = parts[4].split(',')[0];
+          if (gecos) {
+            accountName = gecos;
+          }
+        }
+      } catch (error) {
+        // Keep username as fallback
+      }
+
+      // Check if screen is locked (check for screensaver or lock screen processes)
+      let isActive = true;
+      try {
+        // Check for common lock screen processes
+        const { stdout: lockCheck } = await execPromise('pgrep -x "gnome-screensaver|xscreensaver|i3lock|slock" || echo ""');
+        isActive = !lockCheck.trim();
+
+        // Also check loginctl LockedHint if available
+        if (isActive) {
+          try {
+            const { stdout: lockHint } = await execPromise(`loginctl show-user ${username} -p LockedHint --value`);
+            isActive = lockHint.trim() !== 'yes';
+          } catch (error) {
+            // Keep current isActive value
+          }
+        }
+      } catch (error) {
+        // Assume active if we can't determine
+        isActive = true;
+      }
+
+      // Get login time from last command
+      let sessionStartTime = null;
+      try {
+        const { stdout: lastOut } = await execPromise(`last -1 ${username} | head -1`);
+        const match = lastOut.match(/\w+\s+\w+\s+\d+\s+\d+:\d+/);
+        if (match) {
+          sessionStartTime = new Date(match[0]).toISOString();
+        }
+      } catch (error) {
+        sessionStartTime = new Date().toISOString();
+      }
+
+      return {
+        username,
+        userId,
+        accountName,
+        isActive,
+        sessionStartTime: sessionStartTime || new Date().toISOString(),
+        lastActivityTime: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error('Failed to get current user:', error.message);
+      return null;
+    }
   }
 };

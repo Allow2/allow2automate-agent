@@ -143,5 +143,78 @@ export default {
     } catch (error) {
       return 'unknown';
     }
+  },
+
+  /**
+   * Get current logged-in user information
+   */
+  async getCurrentUser() {
+    try {
+      // Get console user (GUI session owner)
+      const { stdout: usernameOut } = await execPromise('stat -f%Su /dev/console 2>/dev/null');
+      const username = usernameOut.trim();
+
+      if (!username || username === 'root' || username === '_windowserver') {
+        return null; // No GUI user logged in
+      }
+
+      // Get user ID
+      let userId = null;
+      try {
+        const { stdout: uidOut } = await execPromise(`id -u ${username} 2>/dev/null`);
+        userId = uidOut.trim();
+      } catch (error) {
+        userId = null;
+      }
+
+      // Get full name (RealName from directory services)
+      let accountName = username;
+      try {
+        const { stdout: nameOut } = await execPromise(`dscl . -read /Users/${username} RealName 2>/dev/null | tail -1`);
+        const fullName = nameOut.trim();
+        if (fullName && fullName !== 'RealName:') {
+          accountName = fullName;
+        }
+      } catch (error) {
+        // Keep username as fallback
+      }
+
+      // Check if screen is locked by querying loginwindow process
+      let isActive = true;
+      try {
+        const { stdout: lockCheck } = await execPromise('pgrep -x loginwindow');
+        // If loginwindow is running but we have a console user, check if screen saver is active
+        const { stdout: ssCheck } = await execPromise('pgrep -x "ScreenSaverEngine"');
+        isActive = !ssCheck.trim(); // If screen saver is running, user is inactive
+      } catch (error) {
+        // Assume active if we can't determine
+        isActive = true;
+      }
+
+      // Get login time from last command
+      let sessionStartTime = null;
+      try {
+        const { stdout: lastOut } = await execPromise(`last -1 ${username} | head -1`);
+        const match = lastOut.match(/\w+\s+\w+\s+\d+\s+\d+:\d+/);
+        if (match) {
+          sessionStartTime = new Date(match[0]).toISOString();
+        }
+      } catch (error) {
+        sessionStartTime = new Date().toISOString();
+      }
+
+      return {
+        username,
+        userId,
+        accountName,
+        isActive,
+        sessionStartTime: sessionStartTime || new Date().toISOString(),
+        lastActivityTime: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error('Failed to get current user:', error.message);
+      return null;
+    }
   }
 };
