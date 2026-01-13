@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+        .success {
+            color: #28a745;
+            font-weight: 500;
+        }
+        code {
+            background: #e8e8ed;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "SF Mono", Menlo, Monaco, monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Configuration Validated</h2>
+
+    <p class="success">✅ Configuration file found and validated successfully</p>
+
+    <p>The installer has detected and validated your configuration file. The agent will be configured with your parent server settings.</p>
+
+    <h2>Installation Details</h2>
+
+    <p><strong>Files to be installed:</strong></p>
+    <ul>
+        <li>Service: <code>/usr/local/bin/allow2automate-agent</code></li>
+        <li>Helper: <code>/usr/local/bin/allow2automate-agent-helper</code></li>
+        <li>Config: <code>/Library/Application Support/Allow2/agent/config.json</code></li>
+        <li>Logs: <code>/Library/Logs/Allow2/agent/</code></li>
+    </ul>
+
+    <p><strong>Services:</strong></p>
+    <ul>
+        <li>LaunchDaemon: <code>/Library/LaunchDaemons/com.allow2.automate-agent.plist</code></li>
+        <li>LaunchAgent: <code>/Library/LaunchAgents/com.allow2.agent-helper.plist</code></li>
+    </ul>
+
+    <h2>After Installation</h2>
+
+    <p>The Allow2 Automate Agent will:</p>
+    <ol>
+        <li>Start automatically on system boot</li>
+        <li>Connect to your parent server</li>
+        <li>Begin monitoring and enforcing policies</li>
+        <li>Display status in menu bar (via helper app)</li>
+    </ol>
+
+    <p><em>Note: You can modify the configuration after installation through the Allow2 Automate parent application or by editing the config file directly.</em></p>
+</body>
+</html>

@@ -219,18 +219,56 @@ EOF
 # Create postinstall script
 cat > "$SCRIPTS_DIR/postinstall" << 'SCRIPT'
 #!/bin/bash
+set -e
+
+CONFIG_DEST="/Library/Application Support/Allow2/agent/config.json"
+CONFIG_DIR="$(dirname "$CONFIG_DEST")"
+CONFIG_SRC="/tmp/allow2-installer/config.json"
+
+# Create config directory with proper permissions
+mkdir -p "$CONFIG_DIR"
+chmod 755 "$CONFIG_DIR"
+
+# Copy validated config from temp location (placed there by distribution.xml script)
+if [ -f "$CONFIG_SRC" ]; then
+    echo "Installing configuration file..."
+    cp "$CONFIG_SRC" "$CONFIG_DEST"
+    chmod 600 "$CONFIG_DEST"
+    chown root:wheel "$CONFIG_DEST"
+    echo "✅ Configuration installed to: $CONFIG_DEST"
+
+    # Clean up temp file
+    rm -f "$CONFIG_SRC"
+    rmdir /tmp/allow2-installer 2>/dev/null || true
+else
+    echo "⚠️  Warning: Validated config not found in temp location"
+    echo "   Installation may not be properly configured"
+fi
+
 # Start main agent service (system-wide)
+echo "Starting Allow2 Automate Agent service..."
 launchctl load /Library/LaunchDaemons/com.allow2.automate-agent.plist 2>/dev/null || true
 launchctl start com.allow2.automate-agent 2>/dev/null || true
 
 # Start helper for current user
 CURRENT_USER=$(stat -f%Su /dev/console)
 if [ -n "$CURRENT_USER" ] && [ "$CURRENT_USER" != "root" ]; then
+    echo "Starting helper application for user: $CURRENT_USER"
     sudo -u "$CURRENT_USER" launchctl load /Library/LaunchAgents/com.allow2.agent-helper.plist 2>/dev/null || true
 fi
 
-echo "Allow2 Automate Agent installed successfully"
-echo "Helper will start automatically on next login"
+echo ""
+echo "✅ Allow2 Automate Agent installed successfully"
+echo ""
+echo "The agent is now running and will:"
+echo "  • Connect to the parent server specified in configuration"
+echo "  • Start automatically on system boot"
+echo "  • Show status in menu bar (helper app)"
+echo ""
+echo "Configuration: $CONFIG_DEST"
+echo "Logs: /var/log/allow2automate-agent.log"
+echo ""
+
 exit 0
 SCRIPT
 chmod +x "$SCRIPTS_DIR/postinstall"
@@ -254,15 +292,45 @@ exit 0
 SCRIPT
 chmod +x "$SCRIPTS_DIR/preinstall"
 
-# Build PKG
-PKG_NAME="allow2automate-agent-${VERSION}.pkg"
+# Create resources directory for distribution XML
+RESOURCES_DIR="$BUILD_DIR/resources"
+mkdir -p "$RESOURCES_DIR"
+
+# Copy HTML resources
+cp installers/macos/welcome.html "$RESOURCES_DIR/"
+cp installers/macos/readme.html "$RESOURCES_DIR/"
+
+# First, build component package (the actual payload)
+COMPONENT_PKG="$BUILD_DIR/allow2automate-agent-component.pkg"
 pkgbuild \
     --root "$PAYLOAD_DIR" \
     --scripts "$SCRIPTS_DIR" \
     --identifier "com.allow2.automate-agent" \
     --version "$VERSION" \
     --install-location "/" \
+    "$COMPONENT_PKG"
+
+# Then, build product archive with distribution XML
+PKG_NAME="allow2automate-agent-darwin-x64-v${VERSION}.pkg"
+productbuild \
+    --distribution "installers/macos/distribution.xml" \
+    --resources "$RESOURCES_DIR" \
+    --package-path "$BUILD_DIR" \
+    --version "$VERSION" \
     "$DIST_DIR/$PKG_NAME"
+
+# Sign the PKG if certificate available
+if [ -n "$APPLE_DEVELOPER_ID" ] && [ -n "$IDENTITY_HASH" ]; then
+    echo "Signing product package..."
+    productsign --sign "$SIGN_IDENTITY" \
+        --keychain "$KEYCHAIN_PATH" \
+        "$DIST_DIR/$PKG_NAME" \
+        "$DIST_DIR/${PKG_NAME%.pkg}-signed.pkg"
+    mv "$DIST_DIR/${PKG_NAME%.pkg}-signed.pkg" "$DIST_DIR/$PKG_NAME"
+
+    echo "✅ Verifying package signature..."
+    pkgutil --check-signature "$DIST_DIR/$PKG_NAME"
+fi
 
 echo "✅ macOS PKG created: $DIST_DIR/$PKG_NAME"
 ls -lh "$DIST_DIR/$PKG_NAME"

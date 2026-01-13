@@ -1,0 +1,130 @@
+#!/bin/bash
+set -e
+
+CONFIG_TEMP="/tmp/allow2automate-agent-config.json"
+CONFIG_PKG="/var/lib/allow2/agent-installer-config.json"
+
+echo "=== Allow2 Automate Agent - Pre-Installation Check ===" >&2
+
+# Function to validate config file
+validate_config() {
+    local config_file="$1"
+
+    if [ ! -f "$config_file" ]; then
+        return 1
+    fi
+
+    # Check if it's valid JSON (using python3 if available, otherwise basic check)
+    if command -v python3 > /dev/null 2>&1; then
+        if ! python3 -c "import json; json.load(open('$config_file'))" 2>/dev/null; then
+            echo "Error: Configuration file is not valid JSON" >&2
+            return 1
+        fi
+
+        # Check required fields
+        local required_fields=("parentApiUrl" "apiPort" "enableMDNS")
+        for field in "${required_fields[@]}"; do
+            if ! python3 -c "import json; config = json.load(open('$config_file')); exit(0 if '$field' in config else 1)" 2>/dev/null; then
+                echo "Error: Missing required field: $field" >&2
+                return 1
+            fi
+        done
+    else
+        # Basic validation without python3
+        if ! grep -q "parentApiUrl" "$config_file" || ! grep -q "apiPort" "$config_file"; then
+            echo "Error: Configuration file missing required fields" >&2
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
+# Function to find config file
+find_config() {
+    # Check common locations
+    local locations=(
+        "/tmp/allow2automate-agent-config.json"
+        "$(dirname "$0")/allow2automate-agent-config.json"
+        "$(pwd)/allow2automate-agent-config.json"
+        "$HOME/Downloads/allow2automate-agent-config.json"
+    )
+
+    for loc in "${locations[@]}"; do
+        if [ -f "$loc" ]; then
+            echo "$loc"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+# Try to find config file
+CONFIG_PATH=$(find_config)
+
+if [ -z "$CONFIG_PATH" ]; then
+    echo "" >&2
+    echo "❌ ERROR: Configuration file not found" >&2
+    echo "" >&2
+    echo "The Allow2 Automate Agent requires a configuration file to install." >&2
+    echo "" >&2
+    echo "Please download the installer ZIP from the Allow2 Automate parent application," >&2
+    echo "extract it to get both files:" >&2
+    echo "  1. allow2automate-agent-*.deb (this installer)" >&2
+    echo "  2. allow2automate-agent-config.json (configuration)" >&2
+    echo "" >&2
+    echo "Then run the installer from the same directory:" >&2
+    echo "  sudo dpkg -i allow2automate-agent-*.deb" >&2
+    echo "" >&2
+    exit 1
+fi
+
+echo "Found configuration file: $CONFIG_PATH" >&2
+
+# Validate config
+if ! validate_config "$CONFIG_PATH"; then
+    echo "" >&2
+    echo "❌ ERROR: Invalid configuration file" >&2
+    echo "" >&2
+    echo "The configuration file at:" >&2
+    echo "  $CONFIG_PATH" >&2
+    echo "" >&2
+    echo "is not valid. Please download a fresh configuration file" >&2
+    echo "from the Allow2 Automate parent application." >&2
+    echo "" >&2
+    exit 1
+fi
+
+# Display config contents for confirmation
+echo "" >&2
+echo "✅ Configuration validated successfully" >&2
+echo "" >&2
+echo "Configuration contents:" >&2
+echo "─────────────────────────────────────────" >&2
+cat "$CONFIG_PATH" >&2
+echo "─────────────────────────────────────────" >&2
+echo "" >&2
+
+# Extract key values for display (if python3 available)
+if command -v python3 > /dev/null 2>&1; then
+    PARENT_URL=$(python3 -c "import json; print(json.load(open('$CONFIG_PATH')).get('parentApiUrl', 'N/A'))" 2>/dev/null || echo "N/A")
+    API_PORT=$(python3 -c "import json; print(json.load(open('$CONFIG_PATH')).get('apiPort', 'N/A'))" 2>/dev/null || echo "N/A")
+    MDNS_ENABLED=$(python3 -c "import json; print('Yes' if json.load(open('$CONFIG_PATH')).get('enableMDNS', False) else 'No')" 2>/dev/null || echo "N/A")
+
+    echo "Configuration Summary:" >&2
+    echo "  Parent Server: $PARENT_URL" >&2
+    echo "  Agent Port: $API_PORT" >&2
+    echo "  mDNS Discovery: $MDNS_ENABLED" >&2
+    echo "" >&2
+fi
+
+# Copy config to package staging area for postinst to use
+mkdir -p "$(dirname "$CONFIG_PKG")"
+cp "$CONFIG_PATH" "$CONFIG_PKG"
+chmod 600 "$CONFIG_PKG"
+
+echo "✅ Pre-installation checks passed" >&2
+echo "" >&2
+
+exit 0

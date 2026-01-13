@@ -1,0 +1,44 @@
+#!/bin/bash
+set -e
+
+CONFIG_PKG="/var/lib/allow2/agent-installer-config.json"
+CONFIG_DEST="/etc/allow2/agent/config.json"
+CONFIG_DIR="$(dirname "$CONFIG_DEST")"
+
+# Create config directory
+mkdir -p "$CONFIG_DIR"
+chmod 755 "$CONFIG_DIR"
+
+# Install config file
+if [ -f "$CONFIG_PKG" ]; then
+    echo "Installing configuration to: $CONFIG_DEST"
+    cp "$CONFIG_PKG" "$CONFIG_DEST"
+    chmod 600 "$CONFIG_DEST"
+    chown root:root "$CONFIG_DEST"
+
+    # Clean up staged config
+    rm -f "$CONFIG_PKG"
+
+    echo "✅ Configuration installed"
+else
+    echo "⚠️  Warning: Staged configuration not found"
+fi
+
+# Reload systemd daemon
+if command -v systemctl > /dev/null 2>&1; then
+    systemctl daemon-reload
+
+    # Enable and start service
+    systemctl enable allow2automate-agent.service
+    systemctl start allow2automate-agent.service
+
+    echo ""
+    echo "✅ Allow2 Automate Agent installed and started"
+    echo ""
+    echo "Configuration: $CONFIG_DEST"
+    echo "Service: allow2automate-agent.service"
+    echo "Logs: journalctl -u allow2automate-agent"
+    echo ""
+fi
+
+exit 0

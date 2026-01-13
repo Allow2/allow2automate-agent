@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>Allow2 Automate Agent</title>
+    <organization>com.allow2</organization>
+    <domains enable_localSystem="true"/>
+    <options customize="never" require-scripts="true" rootVolumeOnly="true" />
+
+    <!-- Welcome message -->
+    <welcome file="welcome.html"/>
+
+    <!-- README with installation instructions -->
+    <readme file="readme.html"/>
+
+    <!-- Choices outline -->
+    <choices-outline>
+        <line choice="default">
+            <line choice="com.allow2.automate-agent"/>
+        </line>
+    </choices-outline>
+
+    <choice id="default"/>
+
+    <choice id="com.allow2.automate-agent" visible="false">
+        <pkg-ref id="com.allow2.automate-agent"/>
+    </choice>
+
+    <pkg-ref id="com.allow2.automate-agent" version="0" onConclusion="none">
+        allow2automate-agent-component.pkg
+    </pkg-ref>
+
+    <!-- Installation check - runs before package selection -->
+    <installation-check script="validateConfig()"/>
+
+    <!-- JavaScript for validation -->
+    <script>
+    <![CDATA[
+
+    function validateConfig() {
+        // Get the directory where the installer is located
+        var installerPath = system.localizedString('PACKAGE_PATH');
+        var installerDir = installerPath.substring(0, installerPath.lastIndexOf('/'));
+
+        // Expected config file path
+        var configPath = installerDir + '/allow2automate-agent-config.json';
+
+        system.log('Checking for config file at: ' + configPath);
+
+        // Check if config file exists
+        if (!system.files.fileExistsAtPath(configPath)) {
+            system.log('Config file not found at: ' + configPath);
+
+            // Show error dialog
+            my.result.title = 'Configuration File Missing';
+            my.result.message = 'The installer requires a configuration file named:\n\n' +
+                               'allow2automate-agent-config.json\n\n' +
+                               'Please download both the installer and configuration file from the ' +
+                               'Allow2 Automate parent application, and ensure they are in the same folder.\n\n' +
+                               'Current installer location:\n' + installerDir;
+            my.result.type = 'Fatal';
+
+            return false;
+        }
+
+        // Read and validate config file
+        var configData = system.files.readFile(configPath);
+
+        if (!configData) {
+            my.result.title = 'Configuration File Error';
+            my.result.message = 'Unable to read configuration file at:\n' + configPath;
+            my.result.type = 'Fatal';
+            return false;
+        }
+
+        // Try to parse JSON
+        var config;
+        try {
+            config = JSON.parse(configData);
+        } catch (e) {
+            my.result.title = 'Invalid Configuration File';
+            my.result.message = 'The configuration file is not valid JSON:\n\n' + e.message;
+            my.result.type = 'Fatal';
+            return false;
+        }
+
+        // Validate required fields
+        var requiredFields = ['parentApiUrl', 'apiPort', 'enableMDNS'];
+        var missingFields = [];
+
+        for (var i = 0; i < requiredFields.length; i++) {
+            if (!config.hasOwnProperty(requiredFields[i])) {
+                missingFields.push(requiredFields[i]);
+            }
+        }
+
+        if (missingFields.length > 0) {
+            my.result.title = 'Invalid Configuration File';
+            my.result.message = 'The configuration file is missing required fields:\n\n' +
+                               missingFields.join(', ') + '\n\n' +
+                               'Please download a fresh configuration file from the Allow2 Automate parent application.';
+            my.result.type = 'Fatal';
+            return false;
+        }
+
+        // Store validated config path for scripts to use
+        system.run('/bin/mkdir', '-p', '/tmp/allow2-installer');
+        system.run('/bin/cp', configPath, '/tmp/allow2-installer/config.json');
+        system.run('/bin/chmod', '600', '/tmp/allow2-installer/config.json');
+
+        system.log('Config file validated successfully');
+
+        // All checks passed
+        return true;
+    }
+
+    ]]>
+    </script>
+</installer-gui-script>
