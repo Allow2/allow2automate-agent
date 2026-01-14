@@ -208,8 +208,11 @@ jobs:
             fi
           done
 
-          APP_IDENTITY_COUNT=$(security find-identity -v -p codesigning temp.keychain 2>&1 | grep -c "Developer ID Application" || echo "0")
-          INSTALLER_IDENTITY_COUNT=$(security find-identity -v -p codesigning temp.keychain 2>&1 | grep -c "Developer ID Installer" || echo "0")
+          # Count identities by searching all identities (no policy filter)
+          # Note: -p codesigning only shows Application certs, not Installer certs
+          ALL_IDENTITIES=$(security find-identity -v temp.keychain 2>&1)
+          APP_IDENTITY_COUNT=$(echo "$ALL_IDENTITIES" | grep -c "Developer ID Application" || echo "0")
+          INSTALLER_IDENTITY_COUNT=$(echo "$ALL_IDENTITIES" | grep -c "Developer ID Installer" || echo "0")
 
           echo ""
           echo "Identity counts:"

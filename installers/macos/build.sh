@@ -123,9 +123,22 @@ if [ -n "$APPLE_DEVELOPER_ID" ]; then
             exit 1
         fi
 
-        # Extract the actual identity hash from the keychain (first valid identity)
-        IDENTITY_HASH=$(echo "$TEMP_OUTPUT" | grep -E "^\s+[0-9]+\)" | head -1 | awk '{print $2}')
-        echo "Using identity hash from keychain: ${IDENTITY_HASH:0:8}...${IDENTITY_HASH: -4}"
+        # Extract APPLICATION identity hash for codesigning binaries
+        APP_IDENTITY_HASH=$(echo "$TEMP_OUTPUT" | grep -E "^\s+[0-9]+\)" | head -1 | awk '{print $2}')
+        echo "Application identity hash: ${APP_IDENTITY_HASH:0:8}...${APP_IDENTITY_HASH: -4}"
+
+        # Extract INSTALLER identity hash for signing PKG
+        # Get all identities and filter for "Developer ID Installer"
+        echo "Searching for Developer ID Installer identity..."
+        ALL_IDENTITIES=$(security find-identity -v "$KEYCHAIN_NAME" 2>&1)
+        INSTALLER_IDENTITY_HASH=$(echo "$ALL_IDENTITIES" | grep "Developer ID Installer" | head -1 | awk '{print $2}')
+
+        if [ -n "$INSTALLER_IDENTITY_HASH" ]; then
+            echo "Installer identity hash: ${INSTALLER_IDENTITY_HASH:0:8}...${INSTALLER_IDENTITY_HASH: -4}"
+        else
+            echo "⚠️  WARNING: No Developer ID Installer identity found"
+            echo "PKG signing will not be possible"
+        fi
     else
         echo "❌ ERROR: Temp keychain not found at $KEYCHAIN_PATH"
         echo "Searching for keychain files..."
@@ -140,17 +153,17 @@ if [ -n "$APPLE_DEVELOPER_ID" ]; then
     # Perform codesigning - explicitly use temp keychain
     echo "Attempting to sign binary..."
 
-    # Use the identity hash from the keychain if we found one, otherwise try APPLE_DEVELOPER_ID
-    if [ -n "$IDENTITY_HASH" ]; then
-        SIGN_IDENTITY="$IDENTITY_HASH"
-        echo "Using identity hash: ${IDENTITY_HASH:0:8}...${IDENTITY_HASH: -4}"
+    # Use the APPLICATION identity hash for codesigning binaries
+    if [ -n "$APP_IDENTITY_HASH" ]; then
+        APP_SIGN_IDENTITY="$APP_IDENTITY_HASH"
+        echo "Using application identity hash: ${APP_IDENTITY_HASH:0:8}...${APP_IDENTITY_HASH: -4}"
     else
-        SIGN_IDENTITY="$APPLE_DEVELOPER_ID"
+        APP_SIGN_IDENTITY="$APPLE_DEVELOPER_ID"
         echo "Using APPLE_DEVELOPER_ID: $REDACTED_ID"
     fi
 
     codesign --force --options runtime \
-        --sign "$SIGN_IDENTITY" \
+        --sign "$APP_SIGN_IDENTITY" \
         --keychain "$KEYCHAIN_PATH" \
         --timestamp \
         "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
@@ -180,10 +193,10 @@ mkdir -p "$PAYLOAD_DIR/Library/LaunchAgents"
 cp helper/autostart/macos/com.allow2.agent-helper.plist "$PAYLOAD_DIR/Library/LaunchAgents/"
 
 # Sign helper binary if certificate available
-if [ -n "$APPLE_DEVELOPER_ID" ] && [ -n "$IDENTITY_HASH" ]; then
+if [ -n "$APPLE_DEVELOPER_ID" ] && [ -n "$APP_IDENTITY_HASH" ]; then
     echo "Signing helper binary..."
     codesign --force --options runtime \
-        --sign "$SIGN_IDENTITY" \
+        --sign "$APP_SIGN_IDENTITY" \
         --keychain "$KEYCHAIN_PATH" \
         --timestamp \
         "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent-helper"
@@ -319,10 +332,11 @@ productbuild \
     --version "$VERSION" \
     "$DIST_DIR/$PKG_NAME"
 
-# Sign the PKG if certificate available
-if [ -n "$APPLE_DEVELOPER_ID" ] && [ -n "$IDENTITY_HASH" ]; then
-    echo "Signing product package..."
-    productsign --sign "$SIGN_IDENTITY" \
+# Sign the PKG if INSTALLER certificate available
+if [ -n "$APPLE_DEVELOPER_ID" ] && [ -n "$INSTALLER_IDENTITY_HASH" ]; then
+    echo "Signing product package with Developer ID Installer certificate..."
+    echo "Using installer identity: ${INSTALLER_IDENTITY_HASH:0:8}...${INSTALLER_IDENTITY_HASH: -4}"
+    productsign --sign "$INSTALLER_IDENTITY_HASH" \
         --keychain "$KEYCHAIN_PATH" \
         "$DIST_DIR/$PKG_NAME" \
         "$DIST_DIR/${PKG_NAME%.pkg}-signed.pkg"
@@ -330,6 +344,11 @@ if [ -n "$APPLE_DEVELOPER_ID" ] && [ -n "$IDENTITY_HASH" ]; then
 
     echo "✅ Verifying package signature..."
     pkgutil --check-signature "$DIST_DIR/$PKG_NAME"
+elif [ -n "$APPLE_DEVELOPER_ID" ]; then
+    echo "⚠️  WARNING: APPLE_DEVELOPER_ID is set but no Installer identity found"
+    echo "PKG will NOT be signed - only the binaries inside are signed"
+    echo "For a fully signed PKG, ensure APPLE_INSTALLER_CERT_BASE64 secret contains"
+    echo "a valid 'Developer ID Installer' certificate"
 fi
 
 echo "✅ macOS PKG created: $DIST_DIR/$PKG_NAME"
