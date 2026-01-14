@@ -118,7 +118,7 @@
         }
 
         // Validate required fields
-        var requiredFields = ['host', 'port', 'enableMDNS', 'host_uuid'];
+        var requiredFields = ['host', 'port', 'enableMDNS', 'host_uuid', 'public_key'];
         var missingFields = [];
 
         for (var i = 0; i < requiredFields.length; i++) {
@@ -161,6 +161,24 @@
         if (typeof config.host_uuid !== 'string' || config.host_uuid.length === 0) {
             my.result.title = 'Invalid Configuration File';
             my.result.message = 'The "host_uuid" field must be a non-empty string.';
+            my.result.type = 'Fatal';
+            return false;
+        }
+
+        if (typeof config.public_key !== 'string' || config.public_key.length === 0) {
+            my.result.title = 'Invalid Configuration File';
+            my.result.message = 'The "public_key" field must be a non-empty string.';
+            my.result.type = 'Fatal';
+            return false;
+        }
+
+        // Validate public key format (must be PEM-encoded RSA public key)
+        if (config.public_key.indexOf('-----BEGIN PUBLIC KEY-----') === -1 ||
+            config.public_key.indexOf('-----END PUBLIC KEY-----') === -1) {
+            my.result.title = 'Invalid Configuration File';
+            my.result.message = 'The "public_key" field must be a valid PEM-encoded RSA public key.\n\n' +
+                               'It should start with "-----BEGIN PUBLIC KEY-----" and ' +
+                               'end with "-----END PUBLIC KEY-----".';
             my.result.type = 'Fatal';
             return false;
         }

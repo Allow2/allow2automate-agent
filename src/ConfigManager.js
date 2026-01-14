@@ -73,6 +73,7 @@ class ConfigManager {
       host: null,
       port: null,
       host_uuid: null,
+      public_key: null,
       authToken: null,
       checkInterval: 30000,
       logLevel: 'info',

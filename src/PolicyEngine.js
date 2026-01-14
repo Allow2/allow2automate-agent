@@ -1,5 +1,6 @@
 import fetch from 'node-fetch';
 import DiscoveryClient from './DiscoveryClient.js';
+import TrustManager from './TrustManager.js';
 
 /**
  * PolicyEngine manages process policies and synchronization with parent
@@ -10,6 +11,7 @@ class PolicyEngine {
     this.logger = logger;
     this.policies = new Map();
     this.discoveryClient = new DiscoveryClient(logger);
+    this.trustManager = new TrustManager(configManager, logger);
     this.cachedParentConnection = null; // Cache discovered parent
     this.loadPoliciesFromCache();
   }
@@ -233,6 +235,18 @@ class PolicyEngine {
     }
 
     const parentApiUrl = `http://${parentConnection.host}:${parentConnection.port}`;
+
+    // ✅ VERIFY PARENT AUTHENTICITY BEFORE SYNCING
+    // This prevents sophisticated attacks where a child sets up a fake parent app
+    try {
+      await this.trustManager.verifyParent(parentApiUrl);
+    } catch (verificationError) {
+      this.logger.error('🚨 REFUSING to sync with unverified parent', {
+        parentUrl: parentApiUrl,
+        error: verificationError.message
+      });
+      return false;
+    }
 
     try {
       const response = await fetch(`${parentApiUrl}/api/agents/${agentId}/policies`, {
