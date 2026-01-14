@@ -36,26 +36,61 @@
     <![CDATA[
 
     function validateConfig() {
-        // Get the directory where the installer is located
-        var installerPath = system.localizedString('PACKAGE_PATH');
-        var installerDir = installerPath.substring(0, installerPath.lastIndexOf('/'));
+        // Try to find config file in multiple locations
+        var configFileName = 'allow2automate-agent-config.json';
+        var searchedLocations = [];
+        var configPath = '';
 
-        // Expected config file path
-        var configPath = installerDir + '/allow2automate-agent-config.json';
+        // Build list of possible locations to check
+        var possibleLocations = [];
 
-        system.log('Checking for config file at: ' + configPath);
+        // 1. Current working directory (where user launched installer from)
+        if (system.env.PWD) {
+            possibleLocations.push(system.env.PWD + '/' + configFileName);
+        }
 
-        // Check if config file exists
-        if (!system.files.fileExistsAtPath(configPath)) {
-            system.log('Config file not found at: ' + configPath);
+        // 2. User's home directory
+        if (system.env.HOME) {
+            possibleLocations.push(system.env.HOME + '/' + configFileName);
+        }
 
-            // Show error dialog
+        // 3. Downloads folder
+        if (system.env.HOME) {
+            possibleLocations.push(system.env.HOME + '/Downloads/' + configFileName);
+        }
+
+        // 4. Desktop
+        if (system.env.HOME) {
+            possibleLocations.push(system.env.HOME + '/Desktop/' + configFileName);
+        }
+
+        // 5. /tmp directory
+        possibleLocations.push('/tmp/' + configFileName);
+
+        // Check each location
+        for (var i = 0; i < possibleLocations.length; i++) {
+            var path = possibleLocations[i];
+            searchedLocations.push(path);
+            system.log('Checking for config file at: ' + path);
+
+            if (system.files.fileExistsAtPath(path)) {
+                configPath = path;
+                system.log('Config file found at: ' + configPath);
+                break;
+            }
+        }
+
+        // If config file not found in any location
+        if (!configPath) {
+            system.log('Config file not found in any location');
+
+            // Show error dialog with all searched locations
             my.result.title = 'Configuration File Missing';
             my.result.message = 'The installer requires a configuration file named:\n\n' +
-                               'allow2automate-agent-config.json\n\n' +
+                               configFileName + '\n\n' +
                                'Please download both the installer and configuration file from the ' +
-                               'Allow2 Automate parent application, and ensure they are in the same folder.\n\n' +
-                               'Current installer location:\n' + installerDir;
+                               'Allow2 Automate parent application, and place them in the same folder.\n\n' +
+                               'Searched locations:\n' + searchedLocations.join('\n');
             my.result.type = 'Fatal';
 
             return false;
@@ -83,7 +118,7 @@
         }
 
         // Validate required fields
-        var requiredFields = ['parentApiUrl', 'apiPort', 'enableMDNS'];
+        var requiredFields = ['host', 'port', 'enableMDNS', 'host_uuid'];
         var missingFields = [];
 
         for (var i = 0; i < requiredFields.length; i++) {
@@ -97,6 +132,35 @@
             my.result.message = 'The configuration file is missing required fields:\n\n' +
                                missingFields.join(', ') + '\n\n' +
                                'Please download a fresh configuration file from the Allow2 Automate parent application.';
+            my.result.type = 'Fatal';
+            return false;
+        }
+
+        // Validate field types
+        if (typeof config.host !== 'string' || config.host.length === 0) {
+            my.result.title = 'Invalid Configuration File';
+            my.result.message = 'The "host" field must be a non-empty string (IP address or hostname).';
+            my.result.type = 'Fatal';
+            return false;
+        }
+
+        if (typeof config.port !== 'number' || config.port < 1 || config.port > 65535) {
+            my.result.title = 'Invalid Configuration File';
+            my.result.message = 'The "port" field must be a number between 1 and 65535.';
+            my.result.type = 'Fatal';
+            return false;
+        }
+
+        if (typeof config.enableMDNS !== 'boolean') {
+            my.result.title = 'Invalid Configuration File';
+            my.result.message = 'The "enableMDNS" field must be a boolean (true or false).';
+            my.result.type = 'Fatal';
+            return false;
+        }
+
+        if (typeof config.host_uuid !== 'string' || config.host_uuid.length === 0) {
+            my.result.title = 'Invalid Configuration File';
+            my.result.message = 'The "host_uuid" field must be a non-empty string.';
             my.result.type = 'Fatal';
             return false;
         }

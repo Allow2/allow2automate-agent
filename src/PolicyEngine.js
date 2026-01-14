@@ -1,4 +1,5 @@
 import fetch from 'node-fetch';
+import DiscoveryClient from './DiscoveryClient.js';
 
 /**
  * PolicyEngine manages process policies and synchronization with parent
@@ -8,6 +9,8 @@ class PolicyEngine {
     this.configManager = configManager;
     this.logger = logger;
     this.policies = new Map();
+    this.discoveryClient = new DiscoveryClient(logger);
+    this.cachedParentConnection = null; // Cache discovered parent
     this.loadPoliciesFromCache();
   }
 
@@ -157,17 +160,79 @@ class PolicyEngine {
   }
 
   /**
+   * Get parent connection info (via mDNS or fallback to config)
+   * Priority: mDNS discovery (if enabled) -> cached connection -> configured host/port
+   */
+  async getParentConnection() {
+    const enableMDNS = this.configManager.get('enableMDNS');
+    const hostUuid = this.configManager.get('host_uuid');
+    const configHost = this.configManager.get('host');
+    const configPort = this.configManager.get('port');
+
+    // If mDNS is enabled (or missing, defaults to true), try discovery first
+    if (enableMDNS !== false) {
+      if (hostUuid) {
+        this.logger.info('mDNS enabled, attempting discovery', { hostUuid });
+
+        // Try cached connection first if available
+        if (this.cachedParentConnection) {
+          this.logger.debug('Using cached parent connection', this.cachedParentConnection);
+          return this.cachedParentConnection;
+        }
+
+        // Attempt mDNS discovery
+        const discovered = await this.discoveryClient.findParentByUuid(hostUuid);
+
+        if (discovered) {
+          this.cachedParentConnection = discovered;
+          this.logger.info('Parent discovered via mDNS', discovered);
+          return discovered;
+        }
+
+        this.logger.warn('mDNS discovery failed, falling back to configured host/port');
+      } else {
+        this.logger.warn('mDNS enabled but host_uuid not configured');
+      }
+    }
+
+    // Fallback to configured host/port
+    if (configHost && configPort) {
+      this.logger.info('Using configured host/port', { host: configHost, port: configPort });
+      return { host: configHost, port: configPort };
+    }
+
+    this.logger.error('No parent connection available - no mDNS discovery and no configured host/port');
+    return null;
+  }
+
+  /**
+   * Get last sync time
+   */
+  getLastSyncTime() {
+    return this.configManager.get('lastSync');
+  }
+
+  /**
    * Sync policies from parent API
    */
   async syncFromParent() {
-    const parentApiUrl = this.configManager.get('parentApiUrl');
     const authToken = this.configManager.get('authToken');
     const agentId = this.configManager.get('agentId');
 
-    if (!parentApiUrl || !authToken) {
-      this.logger.warn('Cannot sync: parent API URL or auth token not configured');
+    if (!authToken) {
+      this.logger.warn('Cannot sync: auth token not configured');
       return false;
     }
+
+    // Get parent connection (via mDNS or config)
+    const parentConnection = await this.getParentConnection();
+
+    if (!parentConnection) {
+      this.logger.warn('Cannot sync: no parent connection available');
+      return false;
+    }
+
+    const parentApiUrl = `http://${parentConnection.host}:${parentConnection.port}`;
 
     try {
       const response = await fetch(`${parentApiUrl}/api/agents/${agentId}/policies`, {
@@ -205,14 +270,23 @@ class PolicyEngine {
    * Report policy violation to parent
    */
   async reportViolation(policy, processInfo) {
-    const parentApiUrl = this.configManager.get('parentApiUrl');
     const authToken = this.configManager.get('authToken');
     const agentId = this.configManager.get('agentId');
 
-    if (!parentApiUrl || !authToken) {
-      this.logger.warn('Cannot report violation: parent API not configured');
+    if (!authToken) {
+      this.logger.warn('Cannot report violation: auth token not configured');
       return false;
     }
+
+    // Get parent connection (via mDNS or config)
+    const parentConnection = await this.getParentConnection();
+
+    if (!parentConnection) {
+      this.logger.warn('Cannot report violation: no parent connection available');
+      return false;
+    }
+
+    const parentApiUrl = `http://${parentConnection.host}:${parentConnection.port}`;
 
     try {
       const violation = {

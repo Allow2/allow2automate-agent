@@ -16,7 +16,6 @@ import Logger from './Logger.js';
 import PolicyEngine from './PolicyEngine.js';
 import ProcessMonitor from './ProcessMonitor.js';
 import ApiServer from './ApiServer.js';
-import DiscoveryAdvertiser from './DiscoveryAdvertiser.js';
 import AutoUpdater from './AutoUpdater.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -32,7 +31,6 @@ class Allow2AutomateAgent {
     this.policyEngine = null;
     this.processMonitor = null;
     this.apiServer = null;
-    this.discoveryAdvertiser = null;
     this.autoUpdater = null;
     this.isShuttingDown = false;
   }
@@ -82,8 +80,8 @@ class Allow2AutomateAgent {
     );
     this.logger.info('Process monitor initialized', { checkInterval });
 
-    // Initialize API server
-    const apiPort = this.configManager.get('apiPort') || 8443;
+    // Initialize API server (agent listens on port 8443 for local helper app)
+    const apiPort = 8443;
     this.apiServer = new ApiServer(
       this.configManager,
       this.policyEngine,
@@ -93,15 +91,8 @@ class Allow2AutomateAgent {
     );
     this.logger.info('API server initialized', { port: apiPort });
 
-    // Initialize mDNS discovery (if enabled)
-    if (this.configManager.get('enableMDNS')) {
-      this.discoveryAdvertiser = new DiscoveryAdvertiser(
-        this.configManager.get('agentId'),
-        apiPort,
-        this.logger
-      );
-      this.logger.info('Discovery advertiser initialized');
-    }
+    // Note: Agent does NOT advertise via mDNS
+    // It only discovers the parent via mDNS (handled in PolicyEngine)
 
     // Initialize auto-updater
     this.autoUpdater = new AutoUpdater(this.configManager, this.logger);
@@ -128,17 +119,12 @@ class Allow2AutomateAgent {
    */
   async start() {
     try {
-      // Start API server
+      // Start API server (for local helper app only)
       await this.apiServer.start();
       this.logger.info('API server started');
 
-      // Start mDNS advertising
-      if (this.discoveryAdvertiser) {
-        this.discoveryAdvertiser.start();
-        this.logger.info('mDNS advertising started');
-      }
-
       // Sync policies if configured
+      // (PolicyEngine will use mDNS to discover parent if enabled)
       if (this.configManager.isConfigured()) {
         this.logger.info('Agent is configured, syncing policies...');
         await this.policyEngine.syncFromParent();
@@ -179,8 +165,7 @@ class Allow2AutomateAgent {
       configured,
       policyCount: policies.length,
       apiServer: this.apiServer.isRunning(),
-      monitoring: this.processMonitor.isRunning,
-      mDNS: this.discoveryAdvertiser?.getStatus().isRunning || false
+      monitoring: this.processMonitor.isRunning
     });
   }
 
@@ -205,12 +190,6 @@ class Allow2AutomateAgent {
       if (this.processMonitor) {
         await this.processMonitor.stop();
         this.logger.info('Process monitor stopped');
-      }
-
-      // Stop mDNS advertising
-      if (this.discoveryAdvertiser) {
-        await this.discoveryAdvertiser.stop();
-        this.logger.info('mDNS advertising stopped');
       }
 
       // Stop API server

@@ -89,7 +89,9 @@ class ApiServer {
     this.app.get('/api/helper/status', (req, res) => {
       try {
         const isConfigured = this.configManager.isConfigured();
-        const parentUrl = this.configManager.get('parentApiUrl');
+        const host = this.configManager.get('host');
+        const port = this.configManager.get('port');
+        const parentUrl = (host && port) ? `http://${host}:${port}` : null;
         const agentId = this.configManager.get('agentId');
         const lastHeartbeat = this.policyEngine.getLastSyncTime();
 

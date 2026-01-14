@@ -70,9 +70,10 @@ class ConfigManager {
   getDefaultConfig() {
     return {
       agentId: null,
-      parentApiUrl: null,
+      host: null,
+      port: null,
+      host_uuid: null,
       authToken: null,
-      apiPort: 8443,
       checkInterval: 30000,
       logLevel: 'info',
       enableMDNS: true,
@@ -148,7 +149,7 @@ class ConfigManager {
    * Check if agent is configured
    */
   isConfigured() {
-    return !!(this.config.agentId && this.config.parentApiUrl && this.config.authToken);
+    return !!(this.config.agentId && this.config.host && this.config.port && this.config.authToken);
   }
 }
 
