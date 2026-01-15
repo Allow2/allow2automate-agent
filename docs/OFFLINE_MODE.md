@@ -536,21 +536,127 @@ Show agent status with visual indicators:
 
 ## Configuration
 
-### New Config Fields
+### ⚠️ **IMPORTANT: Configuration is NOT the Source of Truth**
 
-```json
-{
-  "offlineMode": {
-    "enabled": true,
-    "degradedThreshold": 3,      // failures before DEGRADED
-    "offlineThreshold": 15,       // failures before OFFLINE
-    "maxOfflineDays": 7,          // alert if offline > 7 days
-    "retryIntervals": {
-      "connecting": 30000,        // 30s
-      "degraded": 120000,         // 2min
-      "offline": 600000           // 10min
+Offline mode settings are **NOT stored in the agent config file**. The config file is a one-time bootstrap mechanism. Storing dynamic operational parameters there would be confusing and error-prone.
+
+### Hard-Coded Defaults in Agent
+
+**File:** `src/ConnectionStateManager.js`
+
+```javascript
+export default class ConnectionStateManager {
+  constructor(configManager, logger) {
+    // Hard-coded defaults (reasonable starting values)
+    this.settings = {
+      degradedThreshold: 3,        // failures before DEGRADED
+      offlineThreshold: 15,         // failures before OFFLINE
+      maxOfflineDays: 7,            // alert if offline > 7 days
+      retryIntervals: {
+        connecting: 30000,          // 30s
+        degraded: 120000,           // 2min
+        offline: 600000             // 10min
+      }
+    };
+
+    // Load persisted settings from parent (if previously synced)
+    this.loadPersistedSettings();
+  }
+
+  /**
+   * Load settings that were previously synced from parent
+   * These are stored separately from config.json
+   */
+  loadPersistedSettings() {
+    const persisted = this.configManager.get('offlineModeSettings');
+    if (persisted) {
+      this.settings = { ...this.settings, ...persisted };
+      this.logger.info('Loaded offline mode settings from parent', this.settings);
     }
   }
+
+  /**
+   * Update settings from parent sync
+   */
+  updateSettingsFromParent(newSettings) {
+    this.settings = { ...this.settings, ...newSettings };
+
+    // Persist settings separately (not in config file)
+    this.configManager.set('offlineModeSettings', this.settings);
+
+    this.logger.info('Updated offline mode settings from parent', this.settings);
+  }
+}
+```
+
+### Parent-Side Configuration
+
+Settings can be configured:
+1. **Globally** (applies to all agents by default)
+2. **Per-Agent** (overrides global settings for specific agent)
+
+**Database Schema:**
+
+```sql
+-- Global offline mode settings
+CREATE TABLE offline_mode_settings (
+  id INTEGER PRIMARY KEY,
+  degraded_threshold INTEGER DEFAULT 3,
+  offline_threshold INTEGER DEFAULT 15,
+  max_offline_days INTEGER DEFAULT 7,
+  retry_interval_connecting INTEGER DEFAULT 30000,
+  retry_interval_degraded INTEGER DEFAULT 120000,
+  retry_interval_offline INTEGER DEFAULT 600000,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Per-agent overrides (NULL = use global setting)
+ALTER TABLE agents ADD COLUMN offline_degraded_threshold INTEGER DEFAULT NULL;
+ALTER TABLE agents ADD COLUMN offline_threshold INTEGER DEFAULT NULL;
+ALTER TABLE agents ADD COLUMN retry_interval_connecting INTEGER DEFAULT NULL;
+ALTER TABLE agents ADD COLUMN retry_interval_degraded INTEGER DEFAULT NULL;
+ALTER TABLE agents ADD COLUMN retry_interval_offline INTEGER DEFAULT NULL;
+```
+
+### Settings Sync to Agent
+
+When agent syncs, parent includes current offline mode settings:
+
+```javascript
+// Parent: app/routes/agent.js
+router.get('/api/agent/policies', authenticateAgent, async (req, res) => {
+  const agentId = req.agentId;
+
+  // Get policies
+  const policies = await agentService.getPolicies(agentId);
+
+  // Get offline mode settings (agent-specific or global)
+  const offlineSettings = await agentService.getOfflineModeSettings(agentId);
+
+  res.json({
+    success: true,
+    policies,
+    offlineSettings // ← Include in sync response
+  });
+});
+```
+
+Agent receives and persists settings:
+
+```javascript
+// Agent: src/PolicyEngine.js
+async syncFromParent() {
+  // ... existing sync code ...
+
+  const data = await response.json();
+
+  // Update offline mode settings if provided
+  if (data.offlineSettings) {
+    this.connectionState.updateSettingsFromParent(data.offlineSettings);
+  }
+
+  // ... rest of sync ...
 }
 ```
 

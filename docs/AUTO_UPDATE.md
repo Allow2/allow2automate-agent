@@ -590,7 +590,7 @@ async updateHeartbeat(agentId, metadata = {}, headers = {}) {
 }
 ```
 
-### 7. Parent: UI Update Button
+### 7. Parent: UI Update Button with Progress Tracking
 
 **File:** `app/components/AgentSettings.js` (NEW COMPONENT)
 
@@ -607,12 +607,86 @@ class AgentSettings extends Component {
     }
   };
 
+  handleRetryUpdate = () => {
+    const { agent, triggerAgentUpdate } = this.props;
+    triggerAgentUpdate(agent.id);
+  };
+
+  renderUpdateStatus() {
+    const { agent } = this.props;
+
+    if (!agent.update_status) {
+      return null;
+    }
+
+    const { status, step, error, startedAt } = agent.update_status;
+
+    // Map update steps to user-friendly messages
+    const stepMessages = {
+      'notifying': 'Notifying agent...',
+      'downloading': 'Supplying installer...',
+      'installing': 'Installing update...',
+      'restarting': 'Restarting agent service...'
+    };
+
+    switch (status) {
+      case 'in_progress':
+        return (
+          <div className="update-progress">
+            <div className="spinner" />
+            <span className="status-text">{stepMessages[step] || 'Updating...'}</span>
+          </div>
+        );
+
+      case 'failed':
+        return (
+          <div className="update-failed">
+            <span className="status-icon">⚠️</span>
+            <span className="status-text">
+              Failed{' '}
+              {error && (
+                <a
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    this.props.showUpdateError(agent.id, error);
+                  }}
+                  className="error-link"
+                >
+                  (view diagnostics)
+                </a>
+              )}
+            </span>
+            <button
+              onClick={this.handleRetryUpdate}
+              className="retry-button"
+            >
+              Retry
+            </button>
+          </div>
+        );
+
+      case 'success':
+        return (
+          <div className="update-success">
+            <span className="status-icon">✅</span>
+            <span className="status-text">Updated successfully</span>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  }
+
   render() {
     const { agent, latestVersion } = this.props;
 
     const needsUpdate = agent.version &&
       latestVersion &&
       compareVersions(agent.version, latestVersion) < 0;
+
+    const isUpdating = agent.update_status?.status === 'in_progress';
 
     return (
       <div className="agent-settings">
@@ -621,7 +695,9 @@ class AgentSettings extends Component {
           <p>Current Version: {agent.version || 'Unknown'}</p>
           <p>Latest Version: {latestVersion || 'Checking...'}</p>
 
-          {needsUpdate && (
+          {this.renderUpdateStatus()}
+
+          {needsUpdate && !isUpdating && !agent.update_status && (
             <button
               onClick={this.handleUpdate}
               className="update-button"
@@ -630,7 +706,7 @@ class AgentSettings extends Component {
             </button>
           )}
 
-          {!needsUpdate && agent.version && (
+          {!needsUpdate && agent.version && !agent.update_status && (
             <span className="up-to-date">✅ Up to date</span>
           )}
         </div>
@@ -641,6 +717,7 @@ class AgentSettings extends Component {
               type="checkbox"
               checked={agent.auto_update_enabled}
               onChange={this.handleAutoUpdateToggle}
+              disabled={isUpdating}
             />
             Enable automatic updates
           </label>
@@ -657,6 +734,43 @@ export default connect(
   }),
   { triggerAgentUpdate }
 )(AgentSettings);
+```
+
+### Update Progress Bar (Alternative to Spinner)
+
+**File:** `app/components/UpdateProgressBar.js` (NEW COMPONENT)
+
+```jsx
+import React from 'react';
+
+const UPDATE_STEPS = [
+  { key: 'notifying', label: 'Notifying agent', progress: 25 },
+  { key: 'downloading', label: 'Supplying installer', progress: 50 },
+  { key: 'installing', label: 'Installing', progress: 75 },
+  { key: 'restarting', label: 'Restarting service', progress: 90 }
+];
+
+export default function UpdateProgressBar({ currentStep, status }) {
+  const step = UPDATE_STEPS.find(s => s.key === currentStep) || UPDATE_STEPS[0];
+
+  return (
+    <div className="update-progress-bar">
+      <div className="progress-container">
+        <div
+          className="progress-fill"
+          style={{ width: `${step.progress}%` }}
+        />
+      </div>
+      <div className="progress-label">
+        {status === 'failed' ? (
+          <span className="failed-label">❌ Update failed</span>
+        ) : (
+          <span>{step.label}...</span>
+        )}
+      </div>
+    </div>
+  );
+}
 ```
 
 ---
@@ -757,6 +871,14 @@ ALTER TABLE agents ADD COLUMN auto_update_enabled BOOLEAN DEFAULT NULL;
 ALTER TABLE agents ADD COLUMN pending_update BOOLEAN DEFAULT FALSE;
 ALTER TABLE agents ADD COLUMN last_update_check DATETIME DEFAULT NULL;
 ALTER TABLE agents ADD COLUMN last_update_attempt DATETIME DEFAULT NULL;
+
+-- Update progress tracking
+ALTER TABLE agents ADD COLUMN update_status VARCHAR(20) DEFAULT NULL;
+  -- in_progress, success, failed, NULL
+ALTER TABLE agents ADD COLUMN update_step VARCHAR(50) DEFAULT NULL;
+  -- notifying, downloading, installing, restarting
+ALTER TABLE agents ADD COLUMN update_started_at DATETIME DEFAULT NULL;
+ALTER TABLE agents ADD COLUMN update_error TEXT DEFAULT NULL;
 ```
 
 ### settings table
