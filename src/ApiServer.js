@@ -6,6 +6,13 @@ import os from 'os';
  * ApiServer provides REST API for agent management
  */
 class ApiServer {
+  /**
+   * @param {import('./ConfigManager.js').default} configManager
+   * @param {import('./PolicyEngine.js').default} policyEngine
+   * @param {import('./ProcessMonitor.js').default} processMonitor
+   * @param {import('./Logger.js').default} logger
+   * @param {number} port
+   */
   constructor(configManager, policyEngine, processMonitor, logger, port = 8443) {
     this.configManager = configManager;
     this.policyEngine = policyEngine;
@@ -15,8 +22,28 @@ class ApiServer {
     this.app = express();
     this.server = null;
 
+    // Optional components (set after construction)
+    this.pluginExtensionManager = null;
+    this.autoUpdater = null;
+
     this.setupMiddleware();
     this.setupRoutes();
+  }
+
+  /**
+   * Set plugin extension manager reference
+   * @param {import('./PluginExtensionManager.js').default} pluginExtensionManager
+   */
+  setPluginExtensionManager(pluginExtensionManager) {
+    this.pluginExtensionManager = pluginExtensionManager;
+  }
+
+  /**
+   * Set auto updater reference
+   * @param {import('./AutoUpdater.js').default} autoUpdater
+   */
+  setAutoUpdater(autoUpdater) {
+    this.autoUpdater = autoUpdater;
   }
 
   /**
@@ -262,17 +289,232 @@ class ApiServer {
       }
     });
 
-    // Auto-update trigger
+    // Auto-update trigger (enhanced)
     this.app.post('/api/update', async (req, res) => {
       try {
-        const { version, downloadUrl } = req.body;
-        // TODO: Implement auto-update logic
+        const { version, downloadUrl, checksum, latestVersion } = req.body;
+
+        if (!this.autoUpdater) {
+          return res.status(503).json({ error: 'Auto-updater not available' });
+        }
+
+        // Build update info from request
+        const updateInfo = {
+          latestVersion: latestVersion || version,
+          downloadUrl,
+          checksum,
+          updateAvailable: true,
+          autoUpdate: true
+        };
+
+        const result = await this.autoUpdater.triggerUpdate(updateInfo);
+
         res.json({
-          message: 'Update initiated',
-          version,
-          status: 'pending'
+          message: result.success ? 'Update initiated' : 'Update failed',
+          version: latestVersion || version,
+          status: result.success ? 'pending' : 'failed',
+          error: result.error
         });
       } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // ========================================
+    // Plugin Extension Endpoints
+    // ========================================
+
+    // Deploy a monitor script from parent
+    this.app.post('/api/plugin/deploy-monitor', async (req, res) => {
+      try {
+        if (!this.pluginExtensionManager) {
+          return res.status(503).json({ error: 'Plugin extension manager not available' });
+        }
+
+        const { pluginId, monitorId, script, interval, platforms, checksum } = req.body;
+
+        if (!pluginId || !monitorId || !script) {
+          return res.status(400).json({ error: 'Missing required fields: pluginId, monitorId, script' });
+        }
+
+        const result = this.pluginExtensionManager.deployMonitor({
+          pluginId,
+          monitorId,
+          script,
+          interval: interval || 30000, // Default 30 seconds
+          platforms,
+          checksum
+        });
+
+        if (result.success) {
+          res.status(201).json(result);
+        } else {
+          res.status(400).json(result);
+        }
+      } catch (error) {
+        this.logger.error('Deploy monitor error', { error: error.message });
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Deploy an action script from parent
+    this.app.post('/api/plugin/deploy-action', async (req, res) => {
+      try {
+        if (!this.pluginExtensionManager) {
+          return res.status(503).json({ error: 'Plugin extension manager not available' });
+        }
+
+        const { pluginId, actionId, script, platforms, checksum } = req.body;
+
+        if (!pluginId || !actionId || !script) {
+          return res.status(400).json({ error: 'Missing required fields: pluginId, actionId, script' });
+        }
+
+        const result = this.pluginExtensionManager.deployAction({
+          pluginId,
+          actionId,
+          script,
+          platforms,
+          checksum
+        });
+
+        if (result.success) {
+          res.status(201).json(result);
+        } else {
+          res.status(400).json(result);
+        }
+      } catch (error) {
+        this.logger.error('Deploy action error', { error: error.message });
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Trigger action execution
+    this.app.post('/api/plugin/trigger-action', async (req, res) => {
+      try {
+        if (!this.pluginExtensionManager) {
+          return res.status(503).json({ error: 'Plugin extension manager not available' });
+        }
+
+        const { pluginId, actionId, triggerId, arguments: args } = req.body;
+
+        if (!pluginId || !actionId || !triggerId) {
+          return res.status(400).json({ error: 'Missing required fields: pluginId, actionId, triggerId' });
+        }
+
+        const result = await this.pluginExtensionManager.triggerAction({
+          pluginId,
+          actionId,
+          triggerId,
+          arguments: args || {}
+        });
+
+        res.json(result);
+      } catch (error) {
+        this.logger.error('Trigger action error', { error: error.message });
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Get queued plugin data for sync
+    this.app.get('/api/plugin/data', async (req, res) => {
+      try {
+        if (!this.pluginExtensionManager) {
+          return res.status(503).json({ error: 'Plugin extension manager not available' });
+        }
+
+        const pluginData = this.pluginExtensionManager.getQueuedData();
+        const actionResponses = this.pluginExtensionManager.getQueuedActionResponses();
+
+        res.json({
+          agentId: this.configManager.get('agentId'),
+          pluginData,
+          actionResponses,
+          timestamp: Date.now()
+        });
+      } catch (error) {
+        this.logger.error('Get plugin data error', { error: error.message });
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Clear queued data after successful sync
+    this.app.post('/api/plugin/data/clear', async (req, res) => {
+      try {
+        if (!this.pluginExtensionManager) {
+          return res.status(503).json({ error: 'Plugin extension manager not available' });
+        }
+
+        const { dataKeys, triggerIds } = req.body;
+
+        if (dataKeys) {
+          this.pluginExtensionManager.clearQueuedData(dataKeys);
+        }
+
+        if (triggerIds) {
+          this.pluginExtensionManager.clearActionResponses(triggerIds);
+        }
+
+        res.json({ success: true });
+      } catch (error) {
+        this.logger.error('Clear plugin data error', { error: error.message });
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Get plugin extension status
+    this.app.get('/api/plugin/status', async (req, res) => {
+      try {
+        if (!this.pluginExtensionManager) {
+          return res.status(503).json({ error: 'Plugin extension manager not available' });
+        }
+
+        const status = this.pluginExtensionManager.getStatus();
+        res.json(status);
+      } catch (error) {
+        this.logger.error('Get plugin status error', { error: error.message });
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Remove a deployed monitor
+    this.app.delete('/api/plugin/monitor/:pluginId/:monitorId', async (req, res) => {
+      try {
+        if (!this.pluginExtensionManager) {
+          return res.status(503).json({ error: 'Plugin extension manager not available' });
+        }
+
+        const { pluginId, monitorId } = req.params;
+        const removed = this.pluginExtensionManager.removeMonitor(pluginId, monitorId);
+
+        if (removed) {
+          res.status(204).send();
+        } else {
+          res.status(404).json({ error: 'Monitor not found' });
+        }
+      } catch (error) {
+        this.logger.error('Remove monitor error', { error: error.message });
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Remove a deployed action
+    this.app.delete('/api/plugin/action/:pluginId/:actionId', async (req, res) => {
+      try {
+        if (!this.pluginExtensionManager) {
+          return res.status(503).json({ error: 'Plugin extension manager not available' });
+        }
+
+        const { pluginId, actionId } = req.params;
+        const removed = this.pluginExtensionManager.removeAction(pluginId, actionId);
+
+        if (removed) {
+          res.status(204).send();
+        } else {
+          res.status(404).json({ error: 'Action not found' });
+        }
+      } catch (error) {
+        this.logger.error('Remove action error', { error: error.message });
         res.status(500).json({ error: error.message });
       }
     });

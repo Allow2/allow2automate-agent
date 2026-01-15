@@ -6,6 +6,10 @@ import TrustManager from './TrustManager.js';
  * PolicyEngine manages process policies and synchronization with parent
  */
 class PolicyEngine {
+  /**
+   * @param {import('./ConfigManager.js').default} configManager
+   * @param {import('./Logger.js').default} logger
+   */
   constructor(configManager, logger) {
     this.configManager = configManager;
     this.logger = logger;
@@ -13,7 +17,41 @@ class PolicyEngine {
     this.discoveryClient = new DiscoveryClient(logger);
     this.trustManager = new TrustManager(configManager, logger);
     this.cachedParentConnection = null; // Cache discovered parent
+
+    // Plugin extension manager reference (set after construction)
+    this.pluginExtensionManager = null;
+
     this.loadPoliciesFromCache();
+  }
+
+  /**
+   * Set plugin extension manager for sync integration
+   * @param {import('./PluginExtensionManager.js').default} pluginExtensionManager
+   */
+  setPluginExtensionManager(pluginExtensionManager) {
+    this.pluginExtensionManager = pluginExtensionManager;
+  }
+
+  /**
+   * Get current agent version
+   * @returns {string}
+   */
+  getAgentVersion() {
+    return this.configManager.get('version') || '1.0.0';
+  }
+
+  /**
+   * Build common headers for API requests
+   * @returns {Object}
+   */
+  buildApiHeaders() {
+    const authToken = this.configManager.get('authToken');
+    return {
+      'Authorization': `Bearer ${authToken}`,
+      'Content-Type': 'application/json',
+      'X-Agent-Version': this.getAgentVersion(),
+      'X-Agent-Platform': process.platform
+    };
   }
 
   /**
@@ -249,12 +287,10 @@ class PolicyEngine {
     }
 
     try {
+      // Use common headers with X-Agent-Version
       const response = await fetch(`${parentApiUrl}/api/agents/${agentId}/policies`, {
         method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json'
-        }
+        headers: this.buildApiHeaders()
       });
 
       if (!response.ok) {
@@ -273,10 +309,64 @@ class PolicyEngine {
       this.configManager.set('lastSync', new Date().toISOString());
 
       this.logger.info(`Synced ${remotePolicies.length} policies from parent`);
+
+      // Sync plugin data if plugin manager is available
+      if (this.pluginExtensionManager) {
+        await this.syncPluginData(parentApiUrl);
+      }
+
       return true;
     } catch (error) {
       this.logger.error('Failed to sync policies from parent', { error: error.message });
       return false;
+    }
+  }
+
+  /**
+   * Sync plugin data to parent
+   * @param {string} parentApiUrl - Parent API base URL
+   */
+  async syncPluginData(parentApiUrl) {
+    if (!this.pluginExtensionManager) {
+      return;
+    }
+
+    const agentId = this.configManager.get('agentId');
+
+    try {
+      // Get queued plugin data and action responses
+      const pluginData = this.pluginExtensionManager.getQueuedData();
+      const actionResponses = this.pluginExtensionManager.getQueuedActionResponses();
+
+      // Skip if nothing to sync
+      if (Object.keys(pluginData).length === 0 && actionResponses.length === 0) {
+        return;
+      }
+
+      // Send plugin data
+      const response = await fetch(`${parentApiUrl}/api/agent/plugin-data`, {
+        method: 'POST',
+        headers: this.buildApiHeaders(),
+        body: JSON.stringify({
+          agentId,
+          pluginData,
+          actionResponses,
+          timestamp: Date.now()
+        })
+      });
+
+      if (response.ok) {
+        // Clear synced data
+        this.pluginExtensionManager.clearQueuedData();
+        this.pluginExtensionManager.clearActionResponses();
+        this.logger.info('Plugin data synced to parent');
+      } else {
+        this.logger.warn('Failed to sync plugin data', {
+          status: response.status
+        });
+      }
+    } catch (error) {
+      this.logger.error('Plugin data sync error', { error: error.message });
     }
   }
 
@@ -312,12 +402,10 @@ class PolicyEngine {
         action: 'terminated'
       };
 
+      // Use common headers with X-Agent-Version
       const response = await fetch(`${parentApiUrl}/api/violations`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json'
-        },
+        headers: this.buildApiHeaders(),
         body: JSON.stringify(violation)
       });
 

@@ -17,6 +17,7 @@ import PolicyEngine from './PolicyEngine.js';
 import ProcessMonitor from './ProcessMonitor.js';
 import ApiServer from './ApiServer.js';
 import AutoUpdater from './AutoUpdater.js';
+import PluginExtensionManager from './PluginExtensionManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -32,6 +33,7 @@ class Allow2AutomateAgent {
     this.processMonitor = null;
     this.apiServer = null;
     this.autoUpdater = null;
+    this.pluginExtensionManager = null;
     this.isShuttingDown = false;
   }
 
@@ -94,9 +96,18 @@ class Allow2AutomateAgent {
     // Note: Agent does NOT advertise via mDNS
     // It only discovers the parent via mDNS (handled in PolicyEngine)
 
-    // Initialize auto-updater
-    this.autoUpdater = new AutoUpdater(this.configManager, this.logger);
+    // Initialize plugin extension manager
+    this.pluginExtensionManager = new PluginExtensionManager(this.configManager, this.logger);
+    this.logger.info('Plugin extension manager initialized');
+
+    // Initialize auto-updater with policy engine reference
+    this.autoUpdater = new AutoUpdater(this.configManager, this.logger, this.policyEngine);
     this.logger.info('Auto-updater initialized');
+
+    // Wire up component dependencies
+    this.policyEngine.setPluginExtensionManager(this.pluginExtensionManager);
+    this.apiServer.setPluginExtensionManager(this.pluginExtensionManager);
+    this.apiServer.setAutoUpdater(this.autoUpdater);
   }
 
   /**
@@ -137,6 +148,10 @@ class Allow2AutomateAgent {
       await this.processMonitor.start();
       this.logger.info('Process monitoring started');
 
+      // Start plugin monitors
+      this.pluginExtensionManager.startAllMonitors();
+      this.logger.info('Plugin monitors started');
+
       // Start auto-update checking if enabled
       if (this.configManager.get('autoUpdate')) {
         this.autoUpdater.startAutoCheck();
@@ -159,13 +174,16 @@ class Allow2AutomateAgent {
     const agentId = this.configManager.get('agentId');
     const configured = this.configManager.isConfigured();
     const policies = this.policyEngine.getAllPolicies();
+    const pluginStatus = this.pluginExtensionManager.getStatus();
 
     this.logger.info('Agent Status:', {
       agentId,
       configured,
       policyCount: policies.length,
       apiServer: this.apiServer.isRunning(),
-      monitoring: this.processMonitor.isRunning
+      monitoring: this.processMonitor.isRunning,
+      pluginMonitors: pluginStatus.monitors.length,
+      pluginActions: pluginStatus.actions.length
     });
   }
 
@@ -184,6 +202,12 @@ class Allow2AutomateAgent {
       // Stop auto-updater
       if (this.autoUpdater) {
         this.autoUpdater.stopAutoCheck();
+      }
+
+      // Stop plugin extension manager
+      if (this.pluginExtensionManager) {
+        await this.pluginExtensionManager.shutdown();
+        this.logger.info('Plugin extension manager stopped');
       }
 
       // Stop process monitoring
