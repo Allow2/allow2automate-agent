@@ -31,95 +31,102 @@
     <!--
         JavaScript runs in Installer.app context (not sandboxed like shell scripts).
         This copies the config file to /tmp where preinstall can access it.
+
+        Note: The macOS Installer JS API is very limited. We use system.run() to
+        execute shell commands for most operations.
     -->
     <script>
 <![CDATA[
 function installation_check() {
     // This runs BEFORE installation begins, with user-level permissions
-    var dominated = "allow2automate-agent-config.json";
+    var configName = "allow2automate-agent-config.json";
     var tempDir = "/tmp/allow2-installer";
     var tempConfig = tempDir + "/config.json";
 
-    // Get the path to this distribution package
-    var pkgPath = system.files.pkgPath();
-    var pkgDir = "";
-
-    if (pkgPath) {
-        // Extract directory from package path
-        var lastSlash = pkgPath.lastIndexOf('/');
-        if (lastSlash > 0) {
-            pkgDir = pkgPath.substring(0, lastSlash);
-        }
-    }
-
-    system.log("Allow2 Installer: Package path = " + pkgPath);
-    system.log("Allow2 Installer: Package directory = " + pkgDir);
+    system.log("Allow2 Installer: Starting installation check");
 
     // Create temp directory
     system.run('/bin/mkdir', '-p', tempDir);
 
-    // Search locations for config file
-    var searchPaths = [];
+    // Use a shell script to find and copy the config file
+    // This runs with user permissions and can access user directories
+    var scriptResult = system.run('/bin/bash', '-c',
+        'CONFIG_NAME="' + configName + '"; ' +
+        'TEMP_CONFIG="' + tempConfig + '"; ' +
+        'HOME_DIR="$HOME"; ' +
 
-    // 1. Adjacent to the PKG (most common)
-    if (pkgDir) {
-        searchPaths.push(pkgDir + "/" + dominated);
-    }
+        // Search locations in order of preference
+        'SEARCH_PATHS=( ' +
+        '  "/tmp/$CONFIG_NAME" ' +
+        '  "$HOME_DIR/Downloads/$CONFIG_NAME" ' +
+        '  "$HOME_DIR/Desktop/$CONFIG_NAME" ' +
+        '  "$HOME_DIR/$CONFIG_NAME" ' +
+        '); ' +
 
-    // 2. Already in temp (from previous attempt or manual copy)
-    searchPaths.push("/tmp/" + dominated);
+        // Also search any Allow2* volumes
+        'for vol in /Volumes/Allow2*; do ' +
+        '  if [ -d "$vol" ]; then ' +
+        '    SEARCH_PATHS+=("$vol/$CONFIG_NAME"); ' +
+        '  fi; ' +
+        'done; ' +
 
-    // 3. Check mounted volumes (for DMG installs)
-    // Note: We can't easily enumerate volumes in JS, but we can try common patterns
-    searchPaths.push("/Volumes/Allow2 Installer/" + dominated);
-    searchPaths.push("/Volumes/Allow2/" + dominated);
+        // Also check Downloads subdirectories (where PKG might be extracted)
+        'for dir in "$HOME_DIR/Downloads"/*; do ' +
+        '  if [ -d "$dir" ] && [ -f "$dir/$CONFIG_NAME" ]; then ' +
+        '    SEARCH_PATHS+=("$dir/$CONFIG_NAME"); ' +
+        '  fi; ' +
+        'done; ' +
 
-    // 4. User's common download locations
-    var home = system.files.homeDirectory();
-    if (home) {
-        searchPaths.push(home + "/Downloads/" + dominated);
-        searchPaths.push(home + "/Desktop/" + dominated);
-        searchPaths.push(home + "/" + dominated);
-    }
+        // Find and copy the config
+        'FOUND=""; ' +
+        'for path in "${SEARCH_PATHS[@]}"; do ' +
+        '  if [ -f "$path" ]; then ' +
+        '    FOUND="$path"; ' +
+        '    break; ' +
+        '  fi; ' +
+        'done; ' +
 
-    // Try each location
-    var foundConfig = null;
-    for (var i = 0; i < searchPaths.length; i++) {
-        var path = searchPaths[i];
-        system.log("Allow2 Installer: Checking " + path);
+        // If found, copy to temp
+        'if [ -n "$FOUND" ]; then ' +
+        '  cp "$FOUND" "$TEMP_CONFIG" && chmod 644 "$TEMP_CONFIG" && exit 0; ' +
+        '  exit 2; ' +  // Copy failed
+        'fi; ' +
+        'exit 1'  // Not found
+    );
 
-        if (system.files.fileExistsAtPath(path)) {
-            system.log("Allow2 Installer: Found config at " + path);
-            foundConfig = path;
-            break;
-        }
-    }
+    system.log("Allow2 Installer: Script result = " + scriptResult);
 
-    if (!foundConfig) {
+    if (scriptResult == 1) {
+        // Config not found
         system.log("Allow2 Installer: ERROR - Config file not found");
         my.result.type = 'Fatal';
         my.result.title = 'Configuration File Required';
-        my.result.message = 'The configuration file "' + dominated + '" was not found.\n\n' +
-            'Please place the configuration file in the same folder as the installer package.\n\n' +
+        my.result.message = 'The configuration file "' + configName + '" was not found.\n\n' +
+            'Please place the configuration file in your Downloads folder, ' +
+            'or in the same folder as this installer package.\n\n' +
             'You can download the configuration file from the Allow2 Automate parent application.';
         return false;
     }
 
-    // Copy config to temp location where preinstall can access it
-    system.log("Allow2 Installer: Copying config to " + tempConfig);
-    var copyResult = system.run('/bin/cp', foundConfig, tempConfig);
-
-    if (copyResult != 0) {
-        system.log("Allow2 Installer: ERROR - Failed to copy config (exit code " + copyResult + ")");
+    if (scriptResult == 2) {
+        // Copy failed
+        system.log("Allow2 Installer: ERROR - Failed to copy config file");
         my.result.type = 'Fatal';
         my.result.title = 'Configuration Error';
-        my.result.message = 'Unable to read the configuration file.\n\n' +
-            'Please ensure you have read permission for: ' + foundConfig;
+        my.result.message = 'Found the configuration file but could not copy it.\n\n' +
+            'Please check file permissions and try again.';
         return false;
     }
 
-    // Set permissions on temp file
-    system.run('/bin/chmod', '644', tempConfig);
+    if (scriptResult != 0) {
+        // Unknown error
+        system.log("Allow2 Installer: ERROR - Unknown error (code " + scriptResult + ")");
+        my.result.type = 'Fatal';
+        my.result.title = 'Installation Error';
+        my.result.message = 'An unexpected error occurred while preparing the configuration.\n\n' +
+            'Error code: ' + scriptResult;
+        return false;
+    }
 
     system.log("Allow2 Installer: Config prepared successfully");
     return true;
