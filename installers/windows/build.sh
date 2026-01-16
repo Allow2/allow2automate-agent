@@ -36,8 +36,13 @@ if [ -z "$BINARY" ]; then
 fi
 echo "Using binary: $BINARY"
 
-# Copy to dist folder with consistent name for Inno Setup
-cp "$BINARY" "dist/allow2automate-agent-win.exe"
+# Ensure binary has consistent name for Inno Setup (skip if already correct)
+TARGET="dist/allow2automate-agent-win.exe"
+if [ "$BINARY" != "$TARGET" ]; then
+    cp "$BINARY" "$TARGET"
+fi
+
+# Copy versioned binary to installer dist folder
 cp "$BINARY" "$DIST_DIR/allow2automate-agent-${VERSION}.exe"
 
 # Build helper application
