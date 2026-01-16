@@ -39,30 +39,46 @@
 <![CDATA[
 function installation_check() {
     var configName = "allow2automate-agent-config.json";
-    var tempDir = "/tmp/allow2-installer";
+    var tempDir = "/var/tmp/allow2-installer";
     var tempConfig = tempDir + "/config.json";
 
     system.log("Allow2 Installer: Starting installation check");
 
-    // Create temp directory
-    system.run('/bin/mkdir', '-p', tempDir);
-
-    // Find the PKG path using lsof and look for config in same directory
+    // Find the PKG path and copy config - all in one script
     var scriptResult = system.run('/bin/bash', '-c',
         'CONFIG_NAME="' + configName + '"; ' +
+        'TEMP_DIR="' + tempDir + '"; ' +
         'TEMP_CONFIG="' + tempConfig + '"; ' +
+
+        // Create temp directory
+        'mkdir -p "$TEMP_DIR" || exit 4; ' +
+
+        // Find the PKG path from Installer process
         'PKG_PATH=$(lsof -c Installer 2>/dev/null | grep -E "\\.pkg$" | sed "s/.* //" | head -1); ' +
         'if [ -z "$PKG_PATH" ]; then exit 3; fi; ' +
+
+        // Get directory containing the PKG
         'PKG_DIR=$(dirname "$PKG_PATH"); ' +
         'CONFIG_PATH="$PKG_DIR/$CONFIG_NAME"; ' +
+
+        // Check if config exists and copy it
         'if [ -f "$CONFIG_PATH" ]; then ' +
-        '  cp "$CONFIG_PATH" "$TEMP_CONFIG" && chmod 644 "$TEMP_CONFIG" && exit 0; ' +
+        '  cat "$CONFIG_PATH" > "$TEMP_CONFIG" && chmod 644 "$TEMP_CONFIG" && exit 0; ' +
         '  exit 2; ' +
         'fi; ' +
         'exit 1'
     );
 
     system.log("Allow2 Installer: Script result = " + scriptResult);
+
+    if (scriptResult == 4) {
+        system.log("Allow2 Installer: ERROR - Could not create temp directory");
+        my.result.type = 'Fatal';
+        my.result.title = 'Installation Error';
+        my.result.message = 'Could not create temporary directory.\n\n' +
+            'Please check disk permissions and try again.';
+        return false;
+    }
 
     if (scriptResult == 3) {
         system.log("Allow2 Installer: ERROR - Could not determine installer location");

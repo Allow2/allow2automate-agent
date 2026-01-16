@@ -236,7 +236,7 @@ set -e
 
 CONFIG_DEST="/Library/Application Support/Allow2/agent/config.json"
 CONFIG_DIR="$(dirname "$CONFIG_DEST")"
-CONFIG_SRC="/tmp/allow2-installer/config.json"
+CONFIG_SRC="/var/tmp/allow2-installer/config.json"
 
 # Create config directory with proper permissions
 mkdir -p "$CONFIG_DIR"
@@ -252,7 +252,7 @@ if [ -f "$CONFIG_SRC" ]; then
 
     # Clean up temp file
     rm -f "$CONFIG_SRC"
-    rmdir /tmp/allow2-installer 2>/dev/null || true
+    rmdir /var/tmp/allow2-installer 2>/dev/null || true
 else
     echo "⚠️  Warning: Validated config not found in temp location"
     echo "   Installation may not be properly configured"
@@ -292,7 +292,7 @@ cat > "$SCRIPTS_DIR/preinstall" << 'SCRIPT'
 set -e
 
 CONFIG_FILENAME="allow2automate-agent-config.json"
-TEMP_DIR="/tmp/allow2-installer"
+TEMP_DIR="/var/tmp/allow2-installer"
 TEMP_CONFIG="$TEMP_DIR/config.json"
 
 echo "Allow2 Automate Agent - Pre-installation"
