@@ -149,6 +149,7 @@ function BrowseForConfigFile: Boolean;
 var
   ResultCode: Integer;
   TempFile: string;
+  SelectedFileAnsi: AnsiString;
   SelectedFile: string;
   PSCommand: string;
   InitialDir: string;
@@ -175,9 +176,10 @@ begin
   begin
     if FileExists(TempFile) then
     begin
-      if LoadStringFromFile(TempFile, SelectedFile) then
+      // LoadStringFromFile requires AnsiString in Inno Setup Unicode
+      if LoadStringFromFile(TempFile, SelectedFileAnsi) then
       begin
-        SelectedFile := Trim(SelectedFile);
+        SelectedFile := Trim(String(SelectedFileAnsi));
         if (SelectedFile <> '') and FileExists(SelectedFile) then
         begin
           ConfigFilePath := SelectedFile;
