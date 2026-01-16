@@ -182,7 +182,7 @@ export default {
       // Check if screen is locked by querying loginwindow process
       let isActive = true;
       try {
-        const { stdout: lockCheck } = await execPromise('pgrep -x loginwindow');
+        await execPromise('pgrep -x loginwindow');
         // If loginwindow is running but we have a console user, check if screen saver is active
         const { stdout: ssCheck } = await execPromise('pgrep -x "ScreenSaverEngine"');
         isActive = !ssCheck.trim(); // If screen saver is running, user is inactive

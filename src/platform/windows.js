@@ -155,7 +155,7 @@ export default {
       // Get user SID (Security Identifier)
       let userId = null;
       try {
-        const { stdout: sidOut } = await execPromise(`powershell -command "([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value"`);
+        const { stdout: sidOut } = await execPromise('powershell -command "([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value"');
         userId = sidOut.trim();
       } catch (error) {
         userId = null;
