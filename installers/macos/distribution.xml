@@ -3,7 +3,7 @@
     <title>Allow2 Automate Agent</title>
     <organization>com.allow2</organization>
     <domains enable_localSystem="true"/>
-    <options customize="never" require-scripts="true" rootVolumeOnly="true" />
+    <options customize="never" require-scripts="true" rootVolumeOnly="true" allow-external-scripts="yes" />
 
     <!-- Welcome message -->
     <welcome file="welcome.html"/>
