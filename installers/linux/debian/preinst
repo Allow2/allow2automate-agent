@@ -21,8 +21,8 @@ validate_config() {
             return 1
         fi
 
-        # Check required fields
-        local required_fields=("parentApiUrl" "apiPort" "enableMDNS")
+        # Check required fields (matching agent's ConfigManager schema)
+        local required_fields=("host" "port" "enableMDNS" "host_uuid" "public_key")
         for field in "${required_fields[@]}"; do
             if ! python3 -c "import json; config = json.load(open('$config_file')); exit(0 if '$field' in config else 1)" 2>/dev/null; then
                 echo "Error: Missing required field: $field" >&2
@@ -31,7 +31,7 @@ validate_config() {
         done
     else
         # Basic validation without python3
-        if ! grep -q "parentApiUrl" "$config_file" || ! grep -q "apiPort" "$config_file"; then
+        if ! grep -q '"host"' "$config_file" || ! grep -q '"port"' "$config_file"; then
             echo "Error: Configuration file missing required fields" >&2
             return 1
         fi
@@ -108,13 +108,14 @@ echo "" >&2
 
 # Extract key values for display (if python3 available)
 if command -v python3 > /dev/null 2>&1; then
-    PARENT_URL=$(python3 -c "import json; print(json.load(open('$CONFIG_PATH')).get('parentApiUrl', 'N/A'))" 2>/dev/null || echo "N/A")
-    API_PORT=$(python3 -c "import json; print(json.load(open('$CONFIG_PATH')).get('apiPort', 'N/A'))" 2>/dev/null || echo "N/A")
+    PARENT_HOST=$(python3 -c "import json; print(json.load(open('$CONFIG_PATH')).get('host', 'N/A'))" 2>/dev/null || echo "N/A")
+    PARENT_PORT=$(python3 -c "import json; print(json.load(open('$CONFIG_PATH')).get('port', 'N/A'))" 2>/dev/null || echo "N/A")
+    HOST_UUID=$(python3 -c "import json; print(json.load(open('$CONFIG_PATH')).get('host_uuid', 'N/A')[:8] + '...' if json.load(open('$CONFIG_PATH')).get('host_uuid') else 'N/A')" 2>/dev/null || echo "N/A")
     MDNS_ENABLED=$(python3 -c "import json; print('Yes' if json.load(open('$CONFIG_PATH')).get('enableMDNS', False) else 'No')" 2>/dev/null || echo "N/A")
 
     echo "Configuration Summary:" >&2
-    echo "  Parent Server: $PARENT_URL" >&2
-    echo "  Agent Port: $API_PORT" >&2
+    echo "  Parent Server: $PARENT_HOST:$PARENT_PORT" >&2
+    echo "  Parent UUID: $HOST_UUID" >&2
     echo "  mDNS Discovery: $MDNS_ENABLED" >&2
     echo "" >&2
 fi

@@ -370,21 +370,38 @@ fi
 
 # Validate JSON structure
 echo "Validating configuration file..."
+echo "Config path: $FOUND_CONFIG"
 
-# Check if it's valid JSON (use python as it's always available on macOS)
-if ! python3 -c "import json; json.load(open('$FOUND_CONFIG'))" 2>/dev/null; then
-    echo "❌ ERROR: Configuration file is not valid JSON"
+# Check file is readable
+if [ ! -r "$FOUND_CONFIG" ]; then
+    echo "❌ ERROR: Cannot read configuration file"
     exit 1
 fi
 
-# Validate required fields using python
-VALIDATION=$(python3 << EOF
+# Show first few characters to debug
+echo "File preview: $(head -c 100 "$FOUND_CONFIG")"
+
+# Validate JSON and required fields using python
+VALIDATION=$(python3 - "$FOUND_CONFIG" << 'PYEOF'
 import json
 import sys
 
+config_path = sys.argv[1]
+print(f"Reading config from: {config_path}", file=sys.stderr)
+
 try:
-    with open('$FOUND_CONFIG') as f:
-        config = json.load(f)
+    with open(config_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # Debug: show file size
+    print(f"File size: {len(content)} bytes", file=sys.stderr)
+
+    # Parse JSON
+    try:
+        config = json.loads(content)
+    except json.JSONDecodeError as e:
+        print(f"JSON parse error: {e}")
+        sys.exit(1)
 
     required = ['host', 'port', 'enableMDNS', 'host_uuid', 'public_key']
     missing = [f for f in required if f not in config]
@@ -421,10 +438,16 @@ try:
     print("OK")
     sys.exit(0)
 
-except Exception as e:
-    print(f"Validation error: {e}")
+except FileNotFoundError:
+    print(f"File not found: {config_path}")
     sys.exit(1)
-EOF
+except PermissionError:
+    print(f"Permission denied: {config_path}")
+    sys.exit(1)
+except Exception as e:
+    print(f"Validation error: {type(e).__name__}: {e}")
+    sys.exit(1)
+PYEOF
 )
 
 if [ "$VALIDATION" != "OK" ]; then

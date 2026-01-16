@@ -7,29 +7,23 @@
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             font-size: 13px;
             line-height: 1.5;
+            color: #1d1d1f;
         }
         h1 {
             font-size: 18px;
             font-weight: 600;
             margin-bottom: 10px;
         }
-        .info-box {
-            background: #f5f5f7;
-            border: 1px solid #d2d2d7;
-            border-radius: 8px;
-            padding: 12px;
-            margin: 15px 0;
-        }
-        .requirement {
-            color: #bf5700;
-            font-weight: 500;
-        }
         code {
-            background: #e8e8ed;
-            padding: 2px 6px;
-            border-radius: 3px;
             font-family: "SF Mono", Menlo, Monaco, monospace;
             font-size: 12px;
+        }
+        ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        li {
+            margin: 5px 0;
         }
     </style>
 </head>
@@ -37,16 +31,6 @@
     <h1>Welcome to Allow2 Automate Agent</h1>
 
     <p>This installer will install the Allow2 Automate Agent on your Mac.</p>
-
-    <div class="info-box">
-        <p class="requirement">⚠️ IMPORTANT: Configuration File Required</p>
-        <p>Before proceeding, ensure you have extracted the ZIP file containing <strong>both files</strong>:</p>
-        <ul>
-            <li>✅ <code>allow2automate-agent-*.pkg</code> (this installer)</li>
-            <li>✅ <code>allow2automate-agent-config.json</code> (configuration)</li>
-        </ul>
-        <p>Both files <strong>must be in the same folder</strong> for installation to proceed.</p>
-    </div>
 
     <p>The agent will:</p>
     <ul>
@@ -56,11 +40,12 @@
         <li>Connect to your Allow2 Automate parent server</li>
     </ul>
 
-    <p><strong>Requirements:</strong></p>
+    <p>Requirements:</p>
     <ul>
         <li>macOS 10.15 (Catalina) or later</li>
         <li>Administrator privileges</li>
-        <li>Configuration file in same folder as installer</li>
     </ul>
+
+    <p>Click Continue to proceed with installation.</p>
 </body>
 </html>
