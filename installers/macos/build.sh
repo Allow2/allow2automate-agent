@@ -311,6 +311,9 @@ for user_home in /Users/*; do
     fi
 done
 
+# Create temp directory for config
+mkdir -p "$TEMP_DIR"
+
 # $1 = path to the package being installed
 PKG_PATH="$1"
 echo "Package location: $PKG_PATH"
@@ -322,44 +325,67 @@ echo "Looking for config in: $PKG_DIR"
 # Look for config file adjacent to the PKG
 CONFIG_PATH="$PKG_DIR/$CONFIG_FILENAME"
 
-# Also check common locations as fallback
+# IMPORTANT: Check temp location FIRST - distribution.xml JavaScript copies config here
+# This runs before preinstall and has access to user's filesystem
 SEARCH_PATHS=(
-    "$CONFIG_PATH"
-    "$HOME/Downloads/$CONFIG_FILENAME"
-    "$HOME/Desktop/$CONFIG_FILENAME"
-    "$HOME/$CONFIG_FILENAME"
+    "$TEMP_CONFIG"
     "/tmp/$CONFIG_FILENAME"
+    "$CONFIG_PATH"
 )
 
-# Check for mounted DMG volumes (Allow2 Installer, etc.)
+# Check for mounted DMG volumes (Allow2 Installer, etc.) - these may be accessible
 for vol in /Volumes/Allow2*; do
     if [ -d "$vol" ]; then
         SEARCH_PATHS+=("$vol/$CONFIG_FILENAME")
     fi
 done
 
+# User directories as fallback (may not work due to sandbox)
+SEARCH_PATHS+=(
+    "$HOME/Downloads/$CONFIG_FILENAME"
+    "$HOME/Desktop/$CONFIG_FILENAME"
+    "$HOME/$CONFIG_FILENAME"
+)
+
 FOUND_CONFIG=""
+COPIED_CONFIG=""
+
 for path in "${SEARCH_PATHS[@]}"; do
     echo "  Checking: $path"
     if [ -f "$path" ]; then
-        FOUND_CONFIG="$path"
         echo "  ✅ Found config at: $path"
-        break
+
+        # Try to copy to temp location (actual copy tests real permissions)
+        if cp "$path" "$TEMP_CONFIG" 2>/dev/null; then
+            FOUND_CONFIG="$path"
+            COPIED_CONFIG="$TEMP_CONFIG"
+            echo "  ✅ Successfully copied to temp location"
+            break
+        else
+            echo "  ⚠️  Found but cannot read (sandbox restriction)"
+            echo "     Try copying the config to /tmp first:"
+            echo "     cp \"$path\" /tmp/$CONFIG_FILENAME"
+        fi
     fi
 done
 
-if [ -z "$FOUND_CONFIG" ]; then
+if [ -z "$COPIED_CONFIG" ]; then
     echo ""
-    echo "❌ ERROR: Configuration file not found!"
+    echo "❌ ERROR: Configuration file not found or not accessible!"
     echo ""
     echo "The installer requires: $CONFIG_FILENAME"
     echo ""
-    echo "Please ensure the configuration file is in the same"
-    echo "folder as the installer package (.pkg)."
+    echo "Due to macOS security, the installer may not be able to"
+    echo "read files from your Downloads folder."
     echo ""
-    echo "Download both files from the Allow2 Automate parent"
-    echo "application and place them together before running"
-    echo "the installer."
+    echo "SOLUTION: Copy the config file to /tmp before installing:"
+    echo ""
+    echo "  cp ~/Downloads/$CONFIG_FILENAME /tmp/"
+    echo ""
+    echo "Then run the installer again."
+    echo ""
+    echo "Alternatively, mount a DMG containing both the installer"
+    echo "and config file."
     echo ""
     echo "Searched locations:"
     for path in "${SEARCH_PATHS[@]}"; do
@@ -368,21 +394,16 @@ if [ -z "$FOUND_CONFIG" ]; then
     exit 1
 fi
 
-# Validate JSON structure
+# Validate JSON structure from the copied file
 echo "Validating configuration file..."
-echo "Config path: $FOUND_CONFIG"
-
-# Check file is readable
-if [ ! -r "$FOUND_CONFIG" ]; then
-    echo "❌ ERROR: Cannot read configuration file"
-    exit 1
-fi
+echo "Config source: $FOUND_CONFIG"
+echo "Validating from: $COPIED_CONFIG"
 
 # Show first few characters to debug
-echo "File preview: $(head -c 100 "$FOUND_CONFIG")"
+echo "File preview: $(head -c 100 "$COPIED_CONFIG" 2>/dev/null || echo '[cannot preview]')"
 
 # Validate JSON and required fields using python
-VALIDATION=$(python3 - "$FOUND_CONFIG" << 'PYEOF'
+VALIDATION=$(python3 - "$COPIED_CONFIG" << 'PYEOF'
 import json
 import sys
 
@@ -458,9 +479,7 @@ fi
 
 echo "✅ Configuration validated successfully"
 
-# Copy to temp location for postinstall to use
-mkdir -p "$TEMP_DIR"
-cp "$FOUND_CONFIG" "$TEMP_CONFIG"
+# Set proper permissions on temp config
 chmod 600 "$TEMP_CONFIG"
 
 echo "✅ Configuration prepared for installation"

@@ -29,18 +29,104 @@
     </pkg-ref>
 
     <!--
-        Note: Configuration validation is handled by the preinstall script,
-        which can reliably access files adjacent to the PKG (using $1).
-
-        The preinstall script:
-        1. Gets PKG path from $1
-        2. Looks for allow2automate-agent-config.json in same directory
-        3. Falls back to Downloads, Desktop, /tmp, mounted DMG volumes
-        4. Validates JSON structure and required fields
-        5. Copies to /tmp/allow2-installer/config.json for postinstall
-        6. Exits with error if config not found (blocks installation)
-
-        This approach works regardless of how the installer was launched
-        (double-click, command line, from DMG, etc.)
+        JavaScript runs in Installer.app context (not sandboxed like shell scripts).
+        This copies the config file to /tmp where preinstall can access it.
     -->
+    <script>
+<![CDATA[
+function installation_check() {
+    // This runs BEFORE installation begins, with user-level permissions
+    var dominated = "allow2automate-agent-config.json";
+    var tempDir = "/tmp/allow2-installer";
+    var tempConfig = tempDir + "/config.json";
+
+    // Get the path to this distribution package
+    var pkgPath = system.files.pkgPath();
+    var pkgDir = "";
+
+    if (pkgPath) {
+        // Extract directory from package path
+        var lastSlash = pkgPath.lastIndexOf('/');
+        if (lastSlash > 0) {
+            pkgDir = pkgPath.substring(0, lastSlash);
+        }
+    }
+
+    system.log("Allow2 Installer: Package path = " + pkgPath);
+    system.log("Allow2 Installer: Package directory = " + pkgDir);
+
+    // Create temp directory
+    system.run('/bin/mkdir', '-p', tempDir);
+
+    // Search locations for config file
+    var searchPaths = [];
+
+    // 1. Adjacent to the PKG (most common)
+    if (pkgDir) {
+        searchPaths.push(pkgDir + "/" + dominated);
+    }
+
+    // 2. Already in temp (from previous attempt or manual copy)
+    searchPaths.push("/tmp/" + dominated);
+
+    // 3. Check mounted volumes (for DMG installs)
+    // Note: We can't easily enumerate volumes in JS, but we can try common patterns
+    searchPaths.push("/Volumes/Allow2 Installer/" + dominated);
+    searchPaths.push("/Volumes/Allow2/" + dominated);
+
+    // 4. User's common download locations
+    var home = system.files.homeDirectory();
+    if (home) {
+        searchPaths.push(home + "/Downloads/" + dominated);
+        searchPaths.push(home + "/Desktop/" + dominated);
+        searchPaths.push(home + "/" + dominated);
+    }
+
+    // Try each location
+    var foundConfig = null;
+    for (var i = 0; i < searchPaths.length; i++) {
+        var path = searchPaths[i];
+        system.log("Allow2 Installer: Checking " + path);
+
+        if (system.files.fileExistsAtPath(path)) {
+            system.log("Allow2 Installer: Found config at " + path);
+            foundConfig = path;
+            break;
+        }
+    }
+
+    if (!foundConfig) {
+        system.log("Allow2 Installer: ERROR - Config file not found");
+        my.result.type = 'Fatal';
+        my.result.title = 'Configuration File Required';
+        my.result.message = 'The configuration file "' + dominated + '" was not found.\n\n' +
+            'Please place the configuration file in the same folder as the installer package.\n\n' +
+            'You can download the configuration file from the Allow2 Automate parent application.';
+        return false;
+    }
+
+    // Copy config to temp location where preinstall can access it
+    system.log("Allow2 Installer: Copying config to " + tempConfig);
+    var copyResult = system.run('/bin/cp', foundConfig, tempConfig);
+
+    if (copyResult != 0) {
+        system.log("Allow2 Installer: ERROR - Failed to copy config (exit code " + copyResult + ")");
+        my.result.type = 'Fatal';
+        my.result.title = 'Configuration Error';
+        my.result.message = 'Unable to read the configuration file.\n\n' +
+            'Please ensure you have read permission for: ' + foundConfig;
+        return false;
+    }
+
+    // Set permissions on temp file
+    system.run('/bin/chmod', '644', tempConfig);
+
+    system.log("Allow2 Installer: Config prepared successfully");
+    return true;
+}
+]]>
+    </script>
+
+    <installation-check script="installation_check()"/>
+
 </installer-gui-script>
