@@ -26,6 +26,7 @@ jobs:
             ext: deb,rpm
 
     runs-on: ${{ matrix.os }}
+    environment: release  # Uses consistent OIDC subject claim for Azure federated identity
 
     steps:
       - name: Checkout code
