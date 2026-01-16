@@ -289,7 +289,17 @@ chmod +x "$SCRIPTS_DIR/postinstall"
 # Create preinstall script
 cat > "$SCRIPTS_DIR/preinstall" << 'SCRIPT'
 #!/bin/bash
-# Stop main agent service
+set -e
+
+CONFIG_FILENAME="allow2automate-agent-config.json"
+TEMP_DIR="/tmp/allow2-installer"
+TEMP_CONFIG="$TEMP_DIR/config.json"
+
+echo "Allow2 Automate Agent - Pre-installation"
+echo "========================================="
+
+# Stop existing services first
+echo "Stopping any existing services..."
 launchctl stop com.allow2.automate-agent 2>/dev/null || true
 launchctl unload /Library/LaunchDaemons/com.allow2.automate-agent.plist 2>/dev/null || true
 
@@ -301,6 +311,136 @@ for user_home in /Users/*; do
     fi
 done
 
+# $1 = path to the package being installed
+PKG_PATH="$1"
+echo "Package location: $PKG_PATH"
+
+# Get the directory containing the PKG
+PKG_DIR=$(dirname "$PKG_PATH")
+echo "Looking for config in: $PKG_DIR"
+
+# Look for config file adjacent to the PKG
+CONFIG_PATH="$PKG_DIR/$CONFIG_FILENAME"
+
+# Also check common locations as fallback
+SEARCH_PATHS=(
+    "$CONFIG_PATH"
+    "$HOME/Downloads/$CONFIG_FILENAME"
+    "$HOME/Desktop/$CONFIG_FILENAME"
+    "$HOME/$CONFIG_FILENAME"
+    "/tmp/$CONFIG_FILENAME"
+)
+
+# Check for mounted DMG volumes (Allow2 Installer, etc.)
+for vol in /Volumes/Allow2*; do
+    if [ -d "$vol" ]; then
+        SEARCH_PATHS+=("$vol/$CONFIG_FILENAME")
+    fi
+done
+
+FOUND_CONFIG=""
+for path in "${SEARCH_PATHS[@]}"; do
+    echo "  Checking: $path"
+    if [ -f "$path" ]; then
+        FOUND_CONFIG="$path"
+        echo "  ✅ Found config at: $path"
+        break
+    fi
+done
+
+if [ -z "$FOUND_CONFIG" ]; then
+    echo ""
+    echo "❌ ERROR: Configuration file not found!"
+    echo ""
+    echo "The installer requires: $CONFIG_FILENAME"
+    echo ""
+    echo "Please ensure the configuration file is in the same"
+    echo "folder as the installer package (.pkg)."
+    echo ""
+    echo "Download both files from the Allow2 Automate parent"
+    echo "application and place them together before running"
+    echo "the installer."
+    echo ""
+    echo "Searched locations:"
+    for path in "${SEARCH_PATHS[@]}"; do
+        echo "  - $path"
+    done
+    exit 1
+fi
+
+# Validate JSON structure
+echo "Validating configuration file..."
+
+# Check if it's valid JSON (use python as it's always available on macOS)
+if ! python3 -c "import json; json.load(open('$FOUND_CONFIG'))" 2>/dev/null; then
+    echo "❌ ERROR: Configuration file is not valid JSON"
+    exit 1
+fi
+
+# Validate required fields using python
+VALIDATION=$(python3 << EOF
+import json
+import sys
+
+try:
+    with open('$FOUND_CONFIG') as f:
+        config = json.load(f)
+
+    required = ['host', 'port', 'enableMDNS', 'host_uuid', 'public_key']
+    missing = [f for f in required if f not in config]
+
+    if missing:
+        print(f"Missing fields: {', '.join(missing)}")
+        sys.exit(1)
+
+    # Validate types
+    if not isinstance(config['host'], str) or not config['host']:
+        print("'host' must be a non-empty string")
+        sys.exit(1)
+
+    if not isinstance(config['port'], int) or config['port'] < 1 or config['port'] > 65535:
+        print("'port' must be a number between 1 and 65535")
+        sys.exit(1)
+
+    if not isinstance(config['enableMDNS'], bool):
+        print("'enableMDNS' must be a boolean")
+        sys.exit(1)
+
+    if not isinstance(config['host_uuid'], str) or not config['host_uuid']:
+        print("'host_uuid' must be a non-empty string")
+        sys.exit(1)
+
+    if not isinstance(config['public_key'], str) or not config['public_key']:
+        print("'public_key' must be a non-empty string")
+        sys.exit(1)
+
+    if '-----BEGIN PUBLIC KEY-----' not in config['public_key']:
+        print("'public_key' must be a valid PEM-encoded public key")
+        sys.exit(1)
+
+    print("OK")
+    sys.exit(0)
+
+except Exception as e:
+    print(f"Validation error: {e}")
+    sys.exit(1)
+EOF
+)
+
+if [ "$VALIDATION" != "OK" ]; then
+    echo "❌ ERROR: Invalid configuration file"
+    echo "   $VALIDATION"
+    exit 1
+fi
+
+echo "✅ Configuration validated successfully"
+
+# Copy to temp location for postinstall to use
+mkdir -p "$TEMP_DIR"
+cp "$FOUND_CONFIG" "$TEMP_CONFIG"
+chmod 600 "$TEMP_CONFIG"
+
+echo "✅ Configuration prepared for installation"
 exit 0
 SCRIPT
 chmod +x "$SCRIPTS_DIR/preinstall"

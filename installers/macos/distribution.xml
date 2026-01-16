@@ -28,172 +28,19 @@
         allow2automate-agent-component.pkg
     </pkg-ref>
 
-    <!-- Installation check - runs before package selection -->
-    <installation-check script="validateConfig()"/>
+    <!--
+        Note: Configuration validation is handled by the preinstall script,
+        which can reliably access files adjacent to the PKG (using $1).
 
-    <!-- JavaScript for validation -->
-    <script>
-    <![CDATA[
+        The preinstall script:
+        1. Gets PKG path from $1
+        2. Looks for allow2automate-agent-config.json in same directory
+        3. Falls back to Downloads, Desktop, /tmp, mounted DMG volumes
+        4. Validates JSON structure and required fields
+        5. Copies to /tmp/allow2-installer/config.json for postinstall
+        6. Exits with error if config not found (blocks installation)
 
-    function validateConfig() {
-        // Try to find config file in multiple locations
-        var configFileName = 'allow2automate-agent-config.json';
-        var searchedLocations = [];
-        var configPath = '';
-
-        // Build list of possible locations to check
-        var possibleLocations = [];
-
-        // 1. Current working directory (where user launched installer from)
-        if (system.env.PWD) {
-            possibleLocations.push(system.env.PWD + '/' + configFileName);
-        }
-
-        // 2. User's home directory
-        if (system.env.HOME) {
-            possibleLocations.push(system.env.HOME + '/' + configFileName);
-        }
-
-        // 3. Downloads folder
-        if (system.env.HOME) {
-            possibleLocations.push(system.env.HOME + '/Downloads/' + configFileName);
-        }
-
-        // 4. Desktop
-        if (system.env.HOME) {
-            possibleLocations.push(system.env.HOME + '/Desktop/' + configFileName);
-        }
-
-        // 5. /tmp directory
-        possibleLocations.push('/tmp/' + configFileName);
-
-        // Check each location
-        for (var i = 0; i < possibleLocations.length; i++) {
-            var path = possibleLocations[i];
-            searchedLocations.push(path);
-            system.log('Checking for config file at: ' + path);
-
-            if (system.files.fileExistsAtPath(path)) {
-                configPath = path;
-                system.log('Config file found at: ' + configPath);
-                break;
-            }
-        }
-
-        // If config file not found in any location
-        if (!configPath) {
-            system.log('Config file not found in any location');
-
-            // Show error dialog with all searched locations
-            my.result.title = 'Configuration File Missing';
-            my.result.message = 'The installer requires a configuration file named:\n\n' +
-                               configFileName + '\n\n' +
-                               'Please download both the installer and configuration file from the ' +
-                               'Allow2 Automate parent application, and place them in the same folder.\n\n' +
-                               'Searched locations:\n' + searchedLocations.join('\n');
-            my.result.type = 'Fatal';
-
-            return false;
-        }
-
-        // Read and validate config file
-        var configData = system.files.readFile(configPath);
-
-        if (!configData) {
-            my.result.title = 'Configuration File Error';
-            my.result.message = 'Unable to read configuration file at:\n' + configPath;
-            my.result.type = 'Fatal';
-            return false;
-        }
-
-        // Try to parse JSON
-        var config;
-        try {
-            config = JSON.parse(configData);
-        } catch (e) {
-            my.result.title = 'Invalid Configuration File';
-            my.result.message = 'The configuration file is not valid JSON:\n\n' + e.message;
-            my.result.type = 'Fatal';
-            return false;
-        }
-
-        // Validate required fields
-        var requiredFields = ['host', 'port', 'enableMDNS', 'host_uuid', 'public_key'];
-        var missingFields = [];
-
-        for (var i = 0; i < requiredFields.length; i++) {
-            if (!config.hasOwnProperty(requiredFields[i])) {
-                missingFields.push(requiredFields[i]);
-            }
-        }
-
-        if (missingFields.length > 0) {
-            my.result.title = 'Invalid Configuration File';
-            my.result.message = 'The configuration file is missing required fields:\n\n' +
-                               missingFields.join(', ') + '\n\n' +
-                               'Please download a fresh configuration file from the Allow2 Automate parent application.';
-            my.result.type = 'Fatal';
-            return false;
-        }
-
-        // Validate field types
-        if (typeof config.host !== 'string' || config.host.length === 0) {
-            my.result.title = 'Invalid Configuration File';
-            my.result.message = 'The "host" field must be a non-empty string (IP address or hostname).';
-            my.result.type = 'Fatal';
-            return false;
-        }
-
-        if (typeof config.port !== 'number' || config.port < 1 || config.port > 65535) {
-            my.result.title = 'Invalid Configuration File';
-            my.result.message = 'The "port" field must be a number between 1 and 65535.';
-            my.result.type = 'Fatal';
-            return false;
-        }
-
-        if (typeof config.enableMDNS !== 'boolean') {
-            my.result.title = 'Invalid Configuration File';
-            my.result.message = 'The "enableMDNS" field must be a boolean (true or false).';
-            my.result.type = 'Fatal';
-            return false;
-        }
-
-        if (typeof config.host_uuid !== 'string' || config.host_uuid.length === 0) {
-            my.result.title = 'Invalid Configuration File';
-            my.result.message = 'The "host_uuid" field must be a non-empty string.';
-            my.result.type = 'Fatal';
-            return false;
-        }
-
-        if (typeof config.public_key !== 'string' || config.public_key.length === 0) {
-            my.result.title = 'Invalid Configuration File';
-            my.result.message = 'The "public_key" field must be a non-empty string.';
-            my.result.type = 'Fatal';
-            return false;
-        }
-
-        // Validate public key format (must be PEM-encoded RSA public key)
-        if (config.public_key.indexOf('-----BEGIN PUBLIC KEY-----') === -1 ||
-            config.public_key.indexOf('-----END PUBLIC KEY-----') === -1) {
-            my.result.title = 'Invalid Configuration File';
-            my.result.message = 'The "public_key" field must be a valid PEM-encoded RSA public key.\n\n' +
-                               'It should start with "-----BEGIN PUBLIC KEY-----" and ' +
-                               'end with "-----END PUBLIC KEY-----".';
-            my.result.type = 'Fatal';
-            return false;
-        }
-
-        // Store validated config path for scripts to use
-        system.run('/bin/mkdir', '-p', '/tmp/allow2-installer');
-        system.run('/bin/cp', configPath, '/tmp/allow2-installer/config.json');
-        system.run('/bin/chmod', '600', '/tmp/allow2-installer/config.json');
-
-        system.log('Config file validated successfully');
-
-        // All checks passed
-        return true;
-    }
-
-    ]]>
-    </script>
+        This approach works regardless of how the installer was launched
+        (double-click, command line, from DMG, etc.)
+    -->
 </installer-gui-script>
