@@ -51,20 +51,10 @@ function installation_check() {
     var scriptResult = system.run('/bin/bash', '-c',
         'CONFIG_NAME="' + configName + '"; ' +
         'TEMP_CONFIG="' + tempConfig + '"; ' +
-
-        // Find the PKG path from Installer process
-        'PKG_PATH=$(lsof -c Installer 2>/dev/null | grep "\\.pkg$" | awk \\''{print $NF}\\'' | head -1); ' +
-        'if [ -z "$PKG_PATH" ]; then ' +
-        '  echo "Could not find PKG path" >&2; ' +
-        '  exit 3; ' +
-        'fi; ' +
-
-        // Get directory containing the PKG
+        'PKG_PATH=$(lsof -c Installer 2>/dev/null | grep -E "\\.pkg$" | sed "s/.* //" | head -1); ' +
+        'if [ -z "$PKG_PATH" ]; then exit 3; fi; ' +
         'PKG_DIR=$(dirname "$PKG_PATH"); ' +
         'CONFIG_PATH="$PKG_DIR/$CONFIG_NAME"; ' +
-        'echo "Looking for config at: $CONFIG_PATH" >&2; ' +
-
-        // Check if config exists and copy it
         'if [ -f "$CONFIG_PATH" ]; then ' +
         '  cp "$CONFIG_PATH" "$TEMP_CONFIG" && chmod 644 "$TEMP_CONFIG" && exit 0; ' +
         '  exit 2; ' +
