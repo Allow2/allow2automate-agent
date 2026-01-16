@@ -143,34 +143,58 @@ begin
   Log('No config file found in installer directory');
 end;
 
-// Show file browser dialog for config selection
+// Show file browser dialog for config selection using PowerShell
+// This approach is more reliable than direct Windows API calls in Inno Setup
 function BrowseForConfigFile: Boolean;
 var
-  OpenDialog: TOpenDialog;
+  ResultCode: Integer;
+  TempFile: string;
+  SelectedFile: string;
+  PSCommand: string;
+  InitialDir: string;
 begin
   Result := False;
+  TempFile := ExpandConstant('{tmp}\selected_config.txt');
+  InitialDir := GetInstallerDirectory;
 
-  OpenDialog := TOpenDialog.Create(nil);
-  try
-    OpenDialog.Title := 'Select Configuration File';
-    OpenDialog.Filter := 'JSON Configuration Files (*.json)|*.json|All Files (*.*)|*.*';
-    OpenDialog.DefaultExt := 'json';
-    OpenDialog.Options := [ofFileMustExist, ofPathMustExist, ofHideReadOnly, ofEnableSizing];
-    OpenDialog.InitialDir := GetInstallerDirectory;
+  // Build PowerShell command to show file dialog
+  // Using System.Windows.Forms.OpenFileDialog for reliable file selection
+  PSCommand := '-NoProfile -ExecutionPolicy Bypass -Command "' +
+    'Add-Type -AssemblyName System.Windows.Forms; ' +
+    '$dialog = New-Object System.Windows.Forms.OpenFileDialog; ' +
+    '$dialog.Filter = ''JSON Configuration Files (*.json)|*.json|All Files (*.*)|*.*''; ' +
+    '$dialog.Title = ''Select Allow2 Configuration File''; ' +
+    '$dialog.InitialDirectory = ''' + InitialDir + '''; ' +
+    'if ($dialog.ShowDialog() -eq ''OK'') { ' +
+    '  $dialog.FileName | Out-File -FilePath ''' + TempFile + ''' -Encoding ASCII -NoNewline ' +
+    '}"';
 
-    if OpenDialog.Execute then
+  Log('Launching PowerShell file dialog...');
+
+  if Exec('powershell.exe', PSCommand, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  begin
+    if FileExists(TempFile) then
     begin
-      ConfigFilePath := OpenDialog.FileName;
-      Log('User selected config file: ' + ConfigFilePath);
-      Result := True;
-    end
-    else
-    begin
-      Log('User cancelled config file selection');
+      if LoadStringFromFile(TempFile, SelectedFile) then
+      begin
+        SelectedFile := Trim(SelectedFile);
+        if (SelectedFile <> '') and FileExists(SelectedFile) then
+        begin
+          ConfigFilePath := SelectedFile;
+          Log('User selected config file: ' + ConfigFilePath);
+          Result := True;
+        end;
+      end;
+      DeleteFile(TempFile);
     end;
-  finally
-    OpenDialog.Free;
+  end
+  else
+  begin
+    Log('PowerShell execution failed with code: ' + IntToStr(ResultCode));
   end;
+
+  if not Result then
+    Log('User cancelled config file selection or dialog failed');
 end;
 
 // Check if config file already exists at destination
