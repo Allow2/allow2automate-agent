@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write  # Required for Azure OIDC authentication
 
 jobs:
   build-and-sign:
@@ -53,26 +54,112 @@ jobs:
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
       # Windows Build and Sign
-      #- name: Build Windows executable
-      #  if: matrix.platform == 'windows'
-      #  shell: bash
-      #  run: bash installers/windows/build.sh
+      - name: Build Windows executables
+        if: matrix.platform == 'windows'
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: bash installers/windows/build.sh
 
-      #- name: Sign Windows executable
-      #  if: matrix.platform == 'windows'
-      #  env:
-      #    WINDOWS_CERT_BASE64: ${{ secrets.WINDOWS_CERT_BASE64 }}
-      #  shell: pwsh
-      #  run: |
-      #    if ([string]::IsNullOrEmpty($env:WINDOWS_CERT_BASE64)) {
-      #      Write-Host "Skipping code signing - WINDOWS_CERT_BASE64 not set"
-      #      exit 0
-      #    }
+      - name: Azure Login for Code Signing
+        if: matrix.platform == 'windows'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      #    [System.Convert]::FromBase64String($env:WINDOWS_CERT_BASE64) | Set-Content -Path certificate.pfx -Encoding Byte
-      #    $exe = Get-ChildItem -Path installers/windows/dist/*.exe | Select-Object -First 1
-      #    & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f certificate.pfx /p "${{ secrets.WINDOWS_CERT_PASSWORD }}" /tr http://timestamp.digicert.com /td sha256 /fd sha256 $exe.FullName
-      #    Remove-Item certificate.pfx
+      - name: Sign Windows executables with Azure Trusted Signing
+        if: matrix.platform == 'windows'
+        uses: azure/trusted-signing-action@v0.5.0
+        with:
+          endpoint: https://eus.codesigning.azure.net/
+          trusted-signing-account-name: Allow2
+          certificate-profile-name: Allow2-Dev-Signing
+          files-folder: ${{ github.workspace }}/dist
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Install Inno Setup
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: choco install innosetup -y
+
+      - name: Build Windows installer with Inno Setup
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          Write-Host "Building Windows installer with Inno Setup..."
+
+          # Run Inno Setup compiler
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            "/DAppVersion=$env:VERSION" `
+            "/DSourceDir=${{ github.workspace }}\dist" `
+            "installers\windows\setup.iss"
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Inno Setup compilation failed"
+            exit 1
+          }
+
+          # Show what was built
+          Write-Host "=== Built installer ==="
+          Get-ChildItem -Path "installers\windows\dist\*.exe" | ForEach-Object {
+            Write-Host "  $($_.Name) ($([math]::Round($_.Length / 1MB, 2)) MB)"
+          }
+
+      - name: Sign Windows installer with Azure Trusted Signing
+        if: matrix.platform == 'windows'
+        uses: azure/trusted-signing-action@v0.5.0
+        with:
+          endpoint: https://eus.codesigning.azure.net/
+          trusted-signing-account-name: Allow2
+          certificate-profile-name: Allow2-Dev-Signing
+          files-folder: ${{ github.workspace }}/installers/windows/dist
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Verify Windows signatures
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          Write-Host "=== Verifying code signatures ==="
+
+          # Find signtool
+          $signtool = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter "signtool.exe" |
+            Where-Object { $_.FullName -match "x64" } |
+            Sort-Object { [version]($_.FullName -replace '.*\\(\d+\.\d+\.\d+\.\d+)\\.*', '$1') } -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+
+          Write-Host "Using signtool: $signtool"
+
+          # Verify main binary signatures
+          Get-ChildItem -Path "dist\*.exe" | ForEach-Object {
+            Write-Host "Verifying: $($_.Name)"
+            & $signtool verify /pa $_.FullName
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "  Signature valid"
+            } else {
+              Write-Host "  WARNING: Signature verification failed"
+            }
+          }
+
+          # Verify installer signature
+          Get-ChildItem -Path "installers\windows\dist\*.exe" | ForEach-Object {
+            Write-Host "Verifying installer: $($_.Name)"
+            & $signtool verify /pa $_.FullName
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "  Signature valid"
+            } else {
+              Write-Host "  WARNING: Installer signature verification failed"
+            }
+          }
 
       # macOS Build and Sign
       - name: Import Apple certificates
@@ -539,8 +626,14 @@ jobs:
           echo "=== Artifact directory structure ==="
           ls -laR artifacts/
 
-          # Windows
-          find artifacts/installer-windows -name "*.exe" 2>/dev/null | head -n 1 | xargs -I {} cp {} "release-files/allow2automate-agent-win-x64-${VERSION}.exe"
+          # Windows - prefer the setup installer, fall back to raw exe
+          WIN_INSTALLER=$(find artifacts/installer-windows -name "*setup*.exe" 2>/dev/null | head -n 1)
+          if [ -z "$WIN_INSTALLER" ]; then
+            WIN_INSTALLER=$(find artifacts/installer-windows -name "*.exe" 2>/dev/null | head -n 1)
+          fi
+          if [ -n "$WIN_INSTALLER" ]; then
+            cp "$WIN_INSTALLER" "release-files/allow2automate-agent-win-x64-${VERSION}-setup.exe"
+          fi
 
           # macOS
           find artifacts/installer-macos -name "*.pkg" 2>/dev/null | head -n 1 | xargs -I {} cp {} "release-files/allow2automate-agent-darwin-x64-${VERSION}.pkg"
@@ -617,9 +710,11 @@ jobs:
           ### Installation Instructions
 
           #### Windows
-          1. Download \`allow2automate-agent-win-x64-${VERSION}.exe\`
-          2. Run the executable with administrator privileges
-          3. The agent service will start automatically
+          1. Download \`allow2automate-agent-win-x64-${VERSION}-setup.exe\`
+          2. (Optional) Place your \`config.json\` file in the same folder as the installer
+          3. Run the installer - it will auto-detect the config file or prompt you to browse for one
+          4. Follow the installation wizard
+          5. The agent service will start automatically
 
           #### macOS
           1. Download \`allow2automate-agent-darwin-x64-${VERSION}.pkg\`

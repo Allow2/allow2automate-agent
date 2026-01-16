@@ -35,6 +35,9 @@ if [ -z "$BINARY" ]; then
     exit 1
 fi
 echo "Using binary: $BINARY"
+
+# Copy to dist folder with consistent name for Inno Setup
+cp "$BINARY" "dist/allow2automate-agent-win.exe"
 cp "$BINARY" "$DIST_DIR/allow2automate-agent-${VERSION}.exe"
 
 # Build helper application
@@ -43,17 +46,29 @@ cd helper
 bash build.sh
 cd ..
 
-# Copy helper binary
+# Copy helper binary to both locations
 echo "Including helper binary in package..."
-cp helper/dist/allow2automate-agent-helper-win.exe "$DIST_DIR/allow2automate-agent-helper-${VERSION}.exe"
+if [ -f "helper/dist/allow2automate-agent-helper-win.exe" ]; then
+    cp helper/dist/allow2automate-agent-helper-win.exe "dist/allow2automate-agent-helper-win.exe"
+    cp helper/dist/allow2automate-agent-helper-win.exe "$DIST_DIR/allow2automate-agent-helper-${VERSION}.exe"
+else
+    echo "Warning: Helper binary not found, skipping..."
+fi
 
 # Copy helper autostart scripts
-cp helper/autostart/windows/install-autostart.bat "$DIST_DIR/"
-cp helper/autostart/windows/remove-autostart.bat "$DIST_DIR/"
+if [ -f "helper/autostart/windows/install-autostart.bat" ]; then
+    cp helper/autostart/windows/install-autostart.bat "$DIST_DIR/"
+    cp helper/autostart/windows/remove-autostart.bat "$DIST_DIR/"
+fi
 
 echo "✅ Windows binaries created:"
-echo "   - Main agent: $DIST_DIR/allow2automate-agent-${VERSION}.exe"
-echo "   - Helper: $DIST_DIR/allow2automate-agent-helper-${VERSION}.exe"
-echo "   - Autostart scripts: install-autostart.bat, remove-autostart.bat"
-echo "   Note: For full MSI installer with autostart, WiX Toolset integration needed"
-ls -lh "$DIST_DIR"/*.exe
+echo "   - Main agent: dist/allow2automate-agent-win.exe"
+if [ -f "dist/allow2automate-agent-helper-win.exe" ]; then
+    echo "   - Helper: dist/allow2automate-agent-helper-win.exe"
+fi
+echo ""
+echo "Files in dist/ (for Inno Setup):"
+ls -lh dist/*.exe 2>/dev/null || echo "  (no exe files)"
+echo ""
+echo "Files in $DIST_DIR (versioned):"
+ls -lh "$DIST_DIR"/*.exe 2>/dev/null || echo "  (no exe files)"
