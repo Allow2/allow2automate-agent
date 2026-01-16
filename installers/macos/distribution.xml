@@ -38,7 +38,6 @@
     <script>
 <![CDATA[
 function installation_check() {
-    // This runs BEFORE installation begins, with user-level permissions
     var configName = "allow2automate-agent-config.json";
     var tempDir = "/tmp/allow2-installer";
     var tempConfig = tempDir + "/config.json";
@@ -48,68 +47,53 @@ function installation_check() {
     // Create temp directory
     system.run('/bin/mkdir', '-p', tempDir);
 
-    // Use a shell script to find and copy the config file
-    // This runs with user permissions and can access user directories
+    // Find the PKG path using lsof and look for config in same directory
     var scriptResult = system.run('/bin/bash', '-c',
         'CONFIG_NAME="' + configName + '"; ' +
         'TEMP_CONFIG="' + tempConfig + '"; ' +
-        'HOME_DIR="$HOME"; ' +
 
-        // Search locations in order of preference
-        'SEARCH_PATHS=( ' +
-        '  "/tmp/$CONFIG_NAME" ' +
-        '  "$HOME_DIR/Downloads/$CONFIG_NAME" ' +
-        '  "$HOME_DIR/Desktop/$CONFIG_NAME" ' +
-        '  "$HOME_DIR/$CONFIG_NAME" ' +
-        '); ' +
-
-        // Also search any Allow2* volumes
-        'for vol in /Volumes/Allow2*; do ' +
-        '  if [ -d "$vol" ]; then ' +
-        '    SEARCH_PATHS+=("$vol/$CONFIG_NAME"); ' +
-        '  fi; ' +
-        'done; ' +
-
-        // Also check Downloads subdirectories (where PKG might be extracted)
-        'for dir in "$HOME_DIR/Downloads"/*; do ' +
-        '  if [ -d "$dir" ] && [ -f "$dir/$CONFIG_NAME" ]; then ' +
-        '    SEARCH_PATHS+=("$dir/$CONFIG_NAME"); ' +
-        '  fi; ' +
-        'done; ' +
-
-        // Find and copy the config
-        'FOUND=""; ' +
-        'for path in "${SEARCH_PATHS[@]}"; do ' +
-        '  if [ -f "$path" ]; then ' +
-        '    FOUND="$path"; ' +
-        '    break; ' +
-        '  fi; ' +
-        'done; ' +
-
-        // If found, copy to temp
-        'if [ -n "$FOUND" ]; then ' +
-        '  cp "$FOUND" "$TEMP_CONFIG" && chmod 644 "$TEMP_CONFIG" && exit 0; ' +
-        '  exit 2; ' +  // Copy failed
+        // Find the PKG path from Installer process
+        'PKG_PATH=$(lsof -c Installer 2>/dev/null | grep "\\.pkg$" | awk \\''{print $NF}\\'' | head -1); ' +
+        'if [ -z "$PKG_PATH" ]; then ' +
+        '  echo "Could not find PKG path" >&2; ' +
+        '  exit 3; ' +
         'fi; ' +
-        'exit 1'  // Not found
+
+        // Get directory containing the PKG
+        'PKG_DIR=$(dirname "$PKG_PATH"); ' +
+        'CONFIG_PATH="$PKG_DIR/$CONFIG_NAME"; ' +
+        'echo "Looking for config at: $CONFIG_PATH" >&2; ' +
+
+        // Check if config exists and copy it
+        'if [ -f "$CONFIG_PATH" ]; then ' +
+        '  cp "$CONFIG_PATH" "$TEMP_CONFIG" && chmod 644 "$TEMP_CONFIG" && exit 0; ' +
+        '  exit 2; ' +
+        'fi; ' +
+        'exit 1'
     );
 
     system.log("Allow2 Installer: Script result = " + scriptResult);
 
+    if (scriptResult == 3) {
+        system.log("Allow2 Installer: ERROR - Could not determine installer location");
+        my.result.type = 'Fatal';
+        my.result.title = 'Installation Error';
+        my.result.message = 'Could not determine the installer package location.\n\n' +
+            'Please try running the installer again.';
+        return false;
+    }
+
     if (scriptResult == 1) {
-        // Config not found
         system.log("Allow2 Installer: ERROR - Config file not found");
         my.result.type = 'Fatal';
         my.result.title = 'Configuration File Required';
-        my.result.message = 'The configuration file "' + configName + '" was not found.\n\n' +
-            'Please place the configuration file in your Downloads folder, ' +
-            'or in the same folder as this installer package.\n\n' +
+        my.result.message = 'The configuration file "' + configName + '" was not found in the same folder as the installer.\n\n' +
+            'Please ensure the configuration file is in the same folder as the .pkg installer.\n\n' +
             'You can download the configuration file from the Allow2 Automate parent application.';
         return false;
     }
 
     if (scriptResult == 2) {
-        // Copy failed
         system.log("Allow2 Installer: ERROR - Failed to copy config file");
         my.result.type = 'Fatal';
         my.result.title = 'Configuration Error';
@@ -119,7 +103,6 @@ function installation_check() {
     }
 
     if (scriptResult != 0) {
-        // Unknown error
         system.log("Allow2 Installer: ERROR - Unknown error (code " + scriptResult + ")");
         my.result.type = 'Fatal';
         my.result.title = 'Installation Error';
