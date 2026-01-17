@@ -39,8 +39,10 @@
 <![CDATA[
 function installation_check() {
     var configName = "allow2automate-agent-config.json";
-    var tempDir = "/var/tmp/allow2-installer";
-    var tempConfig = tempDir + "/config.json";
+    // IMPORTANT: Use /tmp instead of /var/tmp because package_script_service
+    // (which runs preinstall) is sandboxed and cannot read from /var/tmp
+    var tempConfig = "/tmp/" + configName;
+    var debugLog = "/tmp/allow2-installer-debug.log";
 
     system.log("Allow2 Installer: Starting installation check");
 
@@ -58,12 +60,10 @@ function installation_check() {
     // The script searches multiple locations where the config might be
     var scriptResult = system.run('/bin/bash', '-c',
         'CONFIG_NAME="' + configName + '"; ' +
-        'TEMP_DIR="' + tempDir + '"; ' +
         'TEMP_CONFIG="' + tempConfig + '"; ' +
-        'DEBUG_LOG="$TEMP_DIR/debug.log"; ' +
+        'DEBUG_LOG="' + debugLog + '"; ' +
 
-        // Create temp directory
-        'mkdir -p "$TEMP_DIR" || exit 4; ' +
+        // Create debug log
         'echo "=== Allow2 Installer Debug Log ===" > "$DEBUG_LOG"; ' +
         'echo "Date: $(date)" >> "$DEBUG_LOG"; ' +
         'echo "Looking for: $CONFIG_NAME" >> "$DEBUG_LOG"; ' +
@@ -173,7 +173,7 @@ function installation_check() {
             '• Desktop\n' +
             '• Same folder as the installer\n\n' +
             'You can download the configuration file from the Allow2 Automate parent application.\n\n' +
-            '(Debug log: /var/tmp/allow2-installer/debug.log)';
+            '(Debug log: /tmp/allow2-installer-debug.log)';
         return false;
     }
 
@@ -183,7 +183,7 @@ function installation_check() {
         my.result.title = 'Configuration Error';
         my.result.message = 'Found the configuration file but could not copy it.\n\n' +
             'Please check file permissions and try again.\n\n' +
-            '(Debug log: /var/tmp/allow2-installer/debug.log)';
+            '(Debug log: /tmp/allow2-installer-debug.log)';
         return false;
     }
 
@@ -193,7 +193,7 @@ function installation_check() {
         my.result.title = 'Installation Error';
         my.result.message = 'An unexpected error occurred while preparing the configuration.\n\n' +
             'Error code: ' + scriptResult + '\n\n' +
-            '(Debug log: /var/tmp/allow2-installer/debug.log)';
+            '(Debug log: /tmp/allow2-installer-debug.log)';
         return false;
     }
 
