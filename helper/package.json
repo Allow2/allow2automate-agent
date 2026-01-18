@@ -9,10 +9,10 @@
     "start": "node src/index.js",
     "start:dev": "NODE_ENV=development node src/index.js",
     "build": "pkg . --out-path dist",
-    "build:all": "pkg . --targets node18-linux-x64,node18-macos-x64,node18-win-x64 --out-path dist"
+    "build:all": "pkg . --targets node18-linux-x64,node18-macos-x64,node18-macos-arm64,node18-win-x64 --out-path dist"
   },
   "pkg": {
-    "targets": ["node18-linux-x64", "node18-macos-x64", "node18-win-x64"],
+    "targets": ["node18-linux-x64", "node18-macos-x64", "node18-macos-arm64", "node18-win-x64"],
     "outputPath": "dist",
     "assets": [
       "src/assets/**/*"

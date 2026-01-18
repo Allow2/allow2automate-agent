@@ -63,17 +63,8 @@ function installation_check() {
 
     system.log("Allow2 Installer: Starting installation check");
 
-    // First, check if config was already copied (handles re-runs)
-    var alreadyExists = system.run('/bin/bash', '-c',
-        '[ -f "' + tempConfig + '" ] && exit 0 || exit 1'
-    );
-
-    if (alreadyExists == 0) {
-        system.log("Allow2 Installer: Config already prepared from previous check");
-        return true;
-    }
-
-    // Search for config file - PRIORITIZE MOUNTED VOLUMES (no TCC restrictions)
+    // ALWAYS search for fresh config from DMG - don't trust stale files in /tmp
+    // This ensures we use the config bundled with THIS installer, not a leftover from a previous attempt
     var scriptResult = system.run('/bin/bash', '-c',
         'CONFIG_NAME="' + configName + '"; ' +
         'TEMP_CONFIG="' + tempConfig + '"; ' +

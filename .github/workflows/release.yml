@@ -660,8 +660,8 @@ jobs:
             cp "$WIN_INSTALLER" "release-files/allow2automate-agent-win-x64-${VERSION}-setup.exe"
           fi
 
-          # macOS
-          find artifacts/installer-macos -name "*.pkg" 2>/dev/null | head -n 1 | xargs -I {} cp {} "release-files/allow2automate-agent-darwin-x64-${VERSION}.pkg"
+          # macOS (universal binary - supports Intel and Apple Silicon)
+          find artifacts/installer-macos -name "*.pkg" 2>/dev/null | head -n 1 | xargs -I {} cp {} "release-files/allow2automate-agent-darwin-universal-${VERSION}.pkg"
 
           # Linux DEB
           find artifacts/installer-linux -name "*.deb" 2>/dev/null | head -n 1 | xargs -I {} cp {} "release-files/allow2automate-agent-linux-amd64-${VERSION}.deb"
@@ -741,10 +741,12 @@ jobs:
           4. Follow the installation wizard
           5. The agent service will start automatically
 
-          #### macOS
-          1. Download \`allow2automate-agent-darwin-x64-${VERSION}.pkg\`
+          #### macOS (Intel & Apple Silicon)
+          1. Download \`allow2automate-agent-darwin-universal-${VERSION}.pkg\`
           2. Open the package and follow the installer
           3. The agent will start automatically as a LaunchDaemon
+
+          Note: This is a universal binary that works on both Intel (x64) and Apple Silicon (M1/M2/M3) Macs.
 
           #### Linux (DEB)
           \`\`\`bash
@@ -776,7 +778,7 @@ jobs:
           ### Platform Support
 
           - Windows 10/11 (x64)
-          - macOS 11+ (x64, ARM64)
+          - macOS 11+ (Intel x64 and Apple Silicon ARM64 - universal binary)
           - Linux (DEB/RPM, x64)
 
           ### Requirements

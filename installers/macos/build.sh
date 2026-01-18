@@ -12,15 +12,39 @@ else
     echo "Version from git tag: $VERSION"
 fi
 
-# Build the binary with pkg
-echo "Building macOS binary..."
+# Build the binary with pkg - create universal binary for Intel + Apple Silicon
+echo "Building macOS binaries (universal)..."
 # Create dist directory first
 mkdir -p dist
 
-# Try to build - use --output to specify exact filename
-npx pkg . --targets node18-macos-x64 --output dist/allow2automate-agent-macos 2>&1 | tee pkg-output.log || {
-    echo "Warning: pkg exited with error, checking if binary was created anyway..."
+# Build for Intel (x64)
+echo "Building for Intel (x64)..."
+npx pkg . --targets node18-macos-x64 --output dist/allow2automate-agent-macos-x64 2>&1 | tee pkg-output-x64.log || {
+    echo "Warning: pkg exited with error for x64, checking if binary was created anyway..."
 }
+
+# Build for Apple Silicon (arm64)
+echo "Building for Apple Silicon (arm64)..."
+npx pkg . --targets node18-macos-arm64 --output dist/allow2automate-agent-macos-arm64 2>&1 | tee pkg-output-arm64.log || {
+    echo "Warning: pkg exited with error for arm64, checking if binary was created anyway..."
+}
+
+# Create universal binary using lipo (if both builds succeeded)
+if [ -f "dist/allow2automate-agent-macos-x64" ] && [ -f "dist/allow2automate-agent-macos-arm64" ]; then
+    echo "Creating universal binary..."
+    lipo -create -output dist/allow2automate-agent-macos \
+        dist/allow2automate-agent-macos-x64 \
+        dist/allow2automate-agent-macos-arm64
+    echo "Universal binary created successfully"
+    # Verify
+    file dist/allow2automate-agent-macos
+elif [ -f "dist/allow2automate-agent-macos-arm64" ]; then
+    echo "Only arm64 build succeeded, using that..."
+    cp dist/allow2automate-agent-macos-arm64 dist/allow2automate-agent-macos
+elif [ -f "dist/allow2automate-agent-macos-x64" ]; then
+    echo "Only x64 build succeeded, using that..."
+    cp dist/allow2automate-agent-macos-x64 dist/allow2automate-agent-macos
+fi
 
 # Create installer structure
 BUILD_DIR="installers/macos/build"
@@ -455,7 +479,7 @@ pkgbuild \
     "$COMPONENT_PKG"
 
 # Then, build product archive with distribution XML
-PKG_NAME="allow2automate-agent-darwin-x64-v${VERSION}.pkg"
+PKG_NAME="allow2automate-agent-darwin-universal-v${VERSION}.pkg"
 productbuild \
     --distribution "installers/macos/distribution.xml" \
     --resources "$RESOURCES_DIR" \

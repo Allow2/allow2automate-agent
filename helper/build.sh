@@ -22,8 +22,22 @@ echo "Building binaries..."
 mkdir -p dist
 
 # Build for each platform
-echo "Building macOS binary..."
-npx pkg . --targets node18-macos-x64 --output dist/allow2automate-agent-helper-macos
+echo "Building macOS binaries (universal)..."
+npx pkg . --targets node18-macos-x64 --output dist/allow2automate-agent-helper-macos-x64
+npx pkg . --targets node18-macos-arm64 --output dist/allow2automate-agent-helper-macos-arm64
+
+# Create universal binary for macOS
+if [ -f "dist/allow2automate-agent-helper-macos-x64" ] && [ -f "dist/allow2automate-agent-helper-macos-arm64" ]; then
+    echo "Creating universal macOS binary..."
+    lipo -create -output dist/allow2automate-agent-helper-macos \
+        dist/allow2automate-agent-helper-macos-x64 \
+        dist/allow2automate-agent-helper-macos-arm64
+    file dist/allow2automate-agent-helper-macos
+elif [ -f "dist/allow2automate-agent-helper-macos-arm64" ]; then
+    cp dist/allow2automate-agent-helper-macos-arm64 dist/allow2automate-agent-helper-macos
+elif [ -f "dist/allow2automate-agent-helper-macos-x64" ]; then
+    cp dist/allow2automate-agent-helper-macos-x64 dist/allow2automate-agent-helper-macos
+fi
 
 echo "Building Linux binary..."
 npx pkg . --targets node18-linux-x64 --output dist/allow2automate-agent-helper-linux
