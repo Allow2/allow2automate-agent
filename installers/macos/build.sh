@@ -186,10 +186,21 @@ if [ -n "$APPLE_DEVELOPER_ID" ]; then
         echo "Using APPLE_DEVELOPER_ID: $REDACTED_ID"
     fi
 
+    # Entitlements file for Node.js pkg binaries (enables JIT, unsigned memory, etc.)
+    ENTITLEMENTS_FILE="installers/macos/entitlements.plist"
+    if [ -f "$ENTITLEMENTS_FILE" ]; then
+        echo "Using entitlements file: $ENTITLEMENTS_FILE"
+        ENTITLEMENTS_FLAG="--entitlements $ENTITLEMENTS_FILE"
+    else
+        echo "⚠️  Warning: Entitlements file not found at $ENTITLEMENTS_FILE"
+        ENTITLEMENTS_FLAG=""
+    fi
+
     codesign --force --options runtime \
         --sign "$APP_SIGN_IDENTITY" \
         --keychain "$KEYCHAIN_PATH" \
         --timestamp \
+        $ENTITLEMENTS_FLAG \
         "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent"
 
     # Verify the signature
@@ -223,6 +234,7 @@ if [ -n "$APPLE_DEVELOPER_ID" ] && [ -n "$APP_IDENTITY_HASH" ]; then
         --sign "$APP_SIGN_IDENTITY" \
         --keychain "$KEYCHAIN_PATH" \
         --timestamp \
+        $ENTITLEMENTS_FLAG \
         "$PAYLOAD_DIR/usr/local/bin/allow2automate-agent-helper"
 
     echo "✅ Verifying helper signature..."

@@ -394,8 +394,9 @@ jobs:
           echo "PKG to sign: $PKG"
 
           # Find the Developer ID Installer identity
+          # Note: Don't use -p codesigning here - Installer certs are NOT codesigning certs
           echo "Searching for Developer ID Installer identity..."
-          INSTALLER_IDENTITY=$(security find-identity -v -p codesigning temp.keychain 2>&1 | grep "Developer ID Installer" | head -1 | awk '{print $2}')
+          INSTALLER_IDENTITY=$(security find-identity -v temp.keychain 2>&1 | grep "Developer ID Installer" | head -1 | awk '{print $2}')
 
           if [ -z "$INSTALLER_IDENTITY" ]; then
             echo "⚠️  No 'Developer ID Installer' found by name"
