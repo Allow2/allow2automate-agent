@@ -236,13 +236,13 @@ set -e
 
 CONFIG_DEST="/Library/Application Support/Allow2/agent/config.json"
 CONFIG_DIR="$(dirname "$CONFIG_DEST")"
-CONFIG_SRC="/var/tmp/allow2-installer/config.json"
+CONFIG_SRC="/tmp/allow2automate-agent-config.json"
 
 # Create config directory with proper permissions
 mkdir -p "$CONFIG_DIR"
 chmod 755 "$CONFIG_DIR"
 
-# Copy validated config from temp location (placed there by distribution.xml script)
+# Copy validated config from temp location (placed there by distribution.xml JavaScript)
 if [ -f "$CONFIG_SRC" ]; then
     echo "Installing configuration file..."
     cp "$CONFIG_SRC" "$CONFIG_DEST"
@@ -252,9 +252,8 @@ if [ -f "$CONFIG_SRC" ]; then
 
     # Clean up temp file
     rm -f "$CONFIG_SRC"
-    rmdir /var/tmp/allow2-installer 2>/dev/null || true
 else
-    echo "⚠️  Warning: Validated config not found in temp location"
+    echo "⚠️  Warning: Validated config not found at: $CONFIG_SRC"
     echo "   Installation may not be properly configured"
 fi
 
@@ -292,8 +291,9 @@ cat > "$SCRIPTS_DIR/preinstall" << 'SCRIPT'
 set -e
 
 CONFIG_FILENAME="allow2automate-agent-config.json"
-TEMP_DIR="/var/tmp/allow2-installer"
-TEMP_CONFIG="$TEMP_DIR/config.json"
+# Use /tmp for config - distribution.xml JavaScript copies it here
+# /tmp is accessible by preinstall (unlike /var/tmp which can have issues)
+TEMP_CONFIG="/tmp/$CONFIG_FILENAME"
 
 echo "Allow2 Automate Agent - Pre-installation"
 echo "========================================="
@@ -311,99 +311,55 @@ for user_home in /Users/*; do
     fi
 done
 
-# Create temp directory for config
-mkdir -p "$TEMP_DIR"
+# The distribution.xml JavaScript should have already copied the config to /tmp
+# This runs AFTER installation_check(), so config should be ready
 
-# $1 = path to the package being installed
-PKG_PATH="$1"
-echo "Package location: $PKG_PATH"
+echo "Looking for configuration file..."
 
-# Get the directory containing the PKG
-PKG_DIR=$(dirname "$PKG_PATH")
-echo "Looking for config in: $PKG_DIR"
+# Check if config exists in /tmp (placed there by distribution.xml JavaScript)
+if [ -f "$TEMP_CONFIG" ]; then
+    echo "✅ Found config at: $TEMP_CONFIG"
+else
+    # Config wasn't found by distribution.xml - this shouldn't happen normally
+    # but let's try some fallback locations anyway
+    echo "⚠️  Config not found at expected location: $TEMP_CONFIG"
+    echo "Attempting fallback search..."
 
-# Look for config file adjacent to the PKG
-CONFIG_PATH="$PKG_DIR/$CONFIG_FILENAME"
+    FOUND=""
 
-# IMPORTANT: Check temp location FIRST - distribution.xml JavaScript copies config here
-# This runs before preinstall and has access to user's filesystem
-SEARCH_PATHS=(
-    "$TEMP_CONFIG"
-    "/tmp/$CONFIG_FILENAME"
-    "$CONFIG_PATH"
-)
-
-# Check for mounted DMG volumes (Allow2 Installer, etc.) - these may be accessible
-for vol in /Volumes/Allow2*; do
-    if [ -d "$vol" ]; then
-        SEARCH_PATHS+=("$vol/$CONFIG_FILENAME")
-    fi
-done
-
-# User directories as fallback (may not work due to sandbox)
-SEARCH_PATHS+=(
-    "$HOME/Downloads/$CONFIG_FILENAME"
-    "$HOME/Desktop/$CONFIG_FILENAME"
-    "$HOME/$CONFIG_FILENAME"
-)
-
-FOUND_CONFIG=""
-COPIED_CONFIG=""
-
-for path in "${SEARCH_PATHS[@]}"; do
-    echo "  Checking: $path"
-    if [ -f "$path" ]; then
-        echo "  ✅ Found config at: $path"
-
-        # Try to copy to temp location (actual copy tests real permissions)
-        if cp "$path" "$TEMP_CONFIG" 2>/dev/null; then
-            FOUND_CONFIG="$path"
-            COPIED_CONFIG="$TEMP_CONFIG"
-            echo "  ✅ Successfully copied to temp location"
-            break
-        else
-            echo "  ⚠️  Found but cannot read (sandbox restriction)"
-            echo "     Try copying the config to /tmp first:"
-            echo "     cp \"$path\" /tmp/$CONFIG_FILENAME"
+    # Check mounted DMG volumes
+    for vol in /Volumes/*; do
+        if [ -d "$vol" ] && [ -f "$vol/$CONFIG_FILENAME" ]; then
+            echo "Found in volume: $vol"
+            if cp "$vol/$CONFIG_FILENAME" "$TEMP_CONFIG" 2>/dev/null; then
+                FOUND="$vol/$CONFIG_FILENAME"
+                break
+            fi
         fi
-    fi
-done
-
-if [ -z "$COPIED_CONFIG" ]; then
-    echo ""
-    echo "❌ ERROR: Configuration file not found or not accessible!"
-    echo ""
-    echo "The installer requires: $CONFIG_FILENAME"
-    echo ""
-    echo "Due to macOS security, the installer may not be able to"
-    echo "read files from your Downloads folder."
-    echo ""
-    echo "SOLUTION: Copy the config file to /tmp before installing:"
-    echo ""
-    echo "  cp ~/Downloads/$CONFIG_FILENAME /tmp/"
-    echo ""
-    echo "Then run the installer again."
-    echo ""
-    echo "Alternatively, mount a DMG containing both the installer"
-    echo "and config file."
-    echo ""
-    echo "Searched locations:"
-    for path in "${SEARCH_PATHS[@]}"; do
-        echo "  - $path"
     done
-    exit 1
+
+    if [ -z "$FOUND" ]; then
+        echo ""
+        echo "❌ ERROR: Configuration file not found!"
+        echo ""
+        echo "The distribution.xml JavaScript should have prepared the config,"
+        echo "but it wasn't found. This may indicate a problem with the"
+        echo "installation process."
+        echo ""
+        echo "Please ensure the config file ($CONFIG_FILENAME) is:"
+        echo "  1. In the same folder as the installer (if using DMG)"
+        echo "  2. Or copied to /tmp/ manually"
+        echo ""
+        exit 1
+    fi
 fi
 
-# Validate JSON structure from the copied file
+# Validate JSON structure
 echo "Validating configuration file..."
-echo "Config source: $FOUND_CONFIG"
-echo "Validating from: $COPIED_CONFIG"
-
-# Show first few characters to debug
-echo "File preview: $(head -c 100 "$COPIED_CONFIG" 2>/dev/null || echo '[cannot preview]')"
+echo "File preview: $(head -c 100 "$TEMP_CONFIG" 2>/dev/null || echo '[cannot preview]')"
 
 # Validate JSON and required fields using python
-VALIDATION=$(python3 - "$COPIED_CONFIG" << 'PYEOF'
+VALIDATION=$(python3 - "$TEMP_CONFIG" << 'PYEOF'
 import json
 import sys
 
@@ -414,10 +370,8 @@ try:
     with open(config_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    # Debug: show file size
     print(f"File size: {len(content)} bytes", file=sys.stderr)
 
-    # Parse JSON
     try:
         config = json.loads(content)
     except json.JSONDecodeError as e:
@@ -431,7 +385,6 @@ try:
         print(f"Missing fields: {', '.join(missing)}")
         sys.exit(1)
 
-    # Validate types
     if not isinstance(config['host'], str) or not config['host']:
         print("'host' must be a non-empty string")
         sys.exit(1)
@@ -478,11 +431,7 @@ if [ "$VALIDATION" != "OK" ]; then
 fi
 
 echo "✅ Configuration validated successfully"
-
-# Set proper permissions on temp config
-chmod 600 "$TEMP_CONFIG"
-
-echo "✅ Configuration prepared for installation"
+echo "✅ Pre-installation complete"
 exit 0
 SCRIPT
 chmod +x "$SCRIPTS_DIR/preinstall"
@@ -535,3 +484,15 @@ fi
 
 echo "✅ macOS PKG created: $DIST_DIR/$PKG_NAME"
 ls -lh "$DIST_DIR/$PKG_NAME"
+
+echo ""
+echo "============================================================"
+echo "                    BUILD COMPLETE"
+echo "============================================================"
+echo ""
+echo "Artifact created: $DIST_DIR/$PKG_NAME"
+echo ""
+echo "NOTE: The main Allow2 Automate app will create a DMG bundle"
+echo "containing this PKG along with the user's config file."
+echo "This PKG is uploaded to GitHub Releases for the main app to download."
+echo ""

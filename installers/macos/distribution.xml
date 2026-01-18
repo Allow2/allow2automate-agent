@@ -35,18 +35,35 @@
         Note: The macOS Installer JS API is very limited. We use system.run() to
         execute shell commands for most operations.
     -->
+    <!--
+        DMG-BASED INSTALLATION APPROACH
+        ================================
+        This installer expects to be run from a mounted DMG volume that contains
+        both the PKG installer and the config file. This is the standard approach
+        for macOS installers that need external configuration files.
+
+        Why DMG? macOS TCC (Transparency, Consent, and Control) prevents installer
+        scripts from reading files in user directories like ~/Downloads. However,
+        mounted volumes (/Volumes/*) are NOT subject to TCC restrictions.
+
+        The search order is:
+        1. Mounted volumes (/Volumes/*) - NOT TCC restricted, preferred
+        2. /tmp - accessible by preinstall, user can copy here manually
+        3. User directories - may fail due to TCC (fallback only)
+
+        JavaScript runs in Installer.app context (not sandboxed like preinstall).
+        This copies the config file to /tmp where preinstall can access it.
+    -->
     <script>
 <![CDATA[
 function installation_check() {
     var configName = "allow2automate-agent-config.json";
-    // IMPORTANT: Use /tmp instead of /var/tmp because package_script_service
-    // (which runs preinstall) is sandboxed and cannot read from /var/tmp
     var tempConfig = "/tmp/" + configName;
     var debugLog = "/tmp/allow2-installer-debug.log";
 
     system.log("Allow2 Installer: Starting installation check");
 
-    // First, check if config was already copied (handles re-runs after first script approval)
+    // First, check if config was already copied (handles re-runs)
     var alreadyExists = system.run('/bin/bash', '-c',
         '[ -f "' + tempConfig + '" ] && exit 0 || exit 1'
     );
@@ -56,8 +73,7 @@ function installation_check() {
         return true;
     }
 
-    // Config not yet copied - search for it in common locations
-    // The script searches multiple locations where the config might be
+    // Search for config file - PRIORITIZE MOUNTED VOLUMES (no TCC restrictions)
     var scriptResult = system.run('/bin/bash', '-c',
         'CONFIG_NAME="' + configName + '"; ' +
         'TEMP_CONFIG="' + tempConfig + '"; ' +
@@ -68,99 +84,78 @@ function installation_check() {
         'echo "Date: $(date)" >> "$DEBUG_LOG"; ' +
         'echo "Looking for: $CONFIG_NAME" >> "$DEBUG_LOG"; ' +
 
-        // Get current user for searching their directories
-        'CURRENT_USER=$(stat -f "%Su" /dev/console 2>/dev/null || echo "$USER"); ' +
-        'echo "Current user: $CURRENT_USER" >> "$DEBUG_LOG"; ' +
-
-        // Search for config file directly in common locations
         'CONFIG_PATH=""; ' +
 
-        // Check Downloads folder
-        'if [ -z "$CONFIG_PATH" ] && [ -f "/Users/$CURRENT_USER/Downloads/$CONFIG_NAME" ]; then ' +
-        '  CONFIG_PATH="/Users/$CURRENT_USER/Downloads/$CONFIG_NAME"; ' +
-        '  echo "Found in Downloads" >> "$DEBUG_LOG"; ' +
-        'fi; ' +
+        // PRIORITY 1: Check mounted volumes FIRST (NO TCC RESTRICTIONS!)
+        // This is the recommended approach - user opens DMG containing pkg + config
+        'echo "=== Checking mounted volumes (preferred) ===" >> "$DEBUG_LOG"; ' +
+        'for vol in /Volumes/*; do ' +
+        '  if [ -d "$vol" ] && [ -f "$vol/$CONFIG_NAME" ]; then ' +
+        '    CONFIG_PATH="$vol/$CONFIG_NAME"; ' +
+        '    echo "✅ Found in mounted volume: $vol" >> "$DEBUG_LOG"; ' +
+        '    break; ' +
+        '  fi; ' +
+        'done; ' +
 
-        // Check Desktop
-        'if [ -z "$CONFIG_PATH" ] && [ -f "/Users/$CURRENT_USER/Desktop/$CONFIG_NAME" ]; then ' +
-        '  CONFIG_PATH="/Users/$CURRENT_USER/Desktop/$CONFIG_NAME"; ' +
-        '  echo "Found on Desktop" >> "$DEBUG_LOG"; ' +
-        'fi; ' +
-
-        // Check home directory
-        'if [ -z "$CONFIG_PATH" ] && [ -f "/Users/$CURRENT_USER/$CONFIG_NAME" ]; then ' +
-        '  CONFIG_PATH="/Users/$CURRENT_USER/$CONFIG_NAME"; ' +
-        '  echo "Found in home dir" >> "$DEBUG_LOG"; ' +
-        'fi; ' +
-
-        // Check /tmp
+        // PRIORITY 2: Check /tmp (user may have manually copied here)
         'if [ -z "$CONFIG_PATH" ] && [ -f "/tmp/$CONFIG_NAME" ]; then ' +
         '  CONFIG_PATH="/tmp/$CONFIG_NAME"; ' +
-        '  echo "Found in /tmp" >> "$DEBUG_LOG"; ' +
+        '  echo "✅ Found in /tmp" >> "$DEBUG_LOG"; ' +
         'fi; ' +
 
-        // Try to find via lsof (may work sometimes)
+        // PRIORITY 3: Check directory where pkg is located (may work for standalone pkg)
         'if [ -z "$CONFIG_PATH" ]; then ' +
-        '  echo "Trying lsof method..." >> "$DEBUG_LOG"; ' +
+        '  echo "Trying to find pkg location via lsof..." >> "$DEBUG_LOG"; ' +
         '  PKG_PATH=$(lsof -c Installer 2>/dev/null | grep -E "\\.pkg" | awk "{print \\$NF}" | grep -v "^$" | head -1); ' +
-        '  echo "lsof PKG_PATH: $PKG_PATH" >> "$DEBUG_LOG"; ' +
-        '  if [ -n "$PKG_PATH" ] && [ -f "$PKG_PATH" ]; then ' +
+        '  if [ -n "$PKG_PATH" ]; then ' +
         '    PKG_DIR=$(dirname "$PKG_PATH"); ' +
+        '    echo "PKG directory: $PKG_DIR" >> "$DEBUG_LOG"; ' +
         '    if [ -f "$PKG_DIR/$CONFIG_NAME" ]; then ' +
         '      CONFIG_PATH="$PKG_DIR/$CONFIG_NAME"; ' +
-        '      echo "Found via lsof in: $PKG_DIR" >> "$DEBUG_LOG"; ' +
+        '      echo "✅ Found next to pkg: $PKG_DIR" >> "$DEBUG_LOG"; ' +
         '    fi; ' +
         '  fi; ' +
         'fi; ' +
 
-        // Search in mounted volumes (for DMG-based installs)
+        // PRIORITY 4: User directories (MAY FAIL DUE TO TCC - last resort)
         'if [ -z "$CONFIG_PATH" ]; then ' +
-        '  echo "Checking mounted volumes..." >> "$DEBUG_LOG"; ' +
-        '  for vol in /Volumes/*; do ' +
-        '    if [ -f "$vol/$CONFIG_NAME" ]; then ' +
-        '      CONFIG_PATH="$vol/$CONFIG_NAME"; ' +
-        '      echo "Found in volume: $vol" >> "$DEBUG_LOG"; ' +
+        '  echo "=== Trying user directories (may fail due to TCC) ===" >> "$DEBUG_LOG"; ' +
+        '  CURRENT_USER=$(stat -f "%Su" /dev/console 2>/dev/null || echo "$USER"); ' +
+        '  echo "Current user: $CURRENT_USER" >> "$DEBUG_LOG"; ' +
+        '  for loc in "/Users/$CURRENT_USER/Downloads" "/Users/$CURRENT_USER/Desktop" "/Users/$CURRENT_USER"; do ' +
+        '    if [ -f "$loc/$CONFIG_NAME" ]; then ' +
+        '      CONFIG_PATH="$loc/$CONFIG_NAME"; ' +
+        '      echo "Found (may not be readable): $loc" >> "$DEBUG_LOG"; ' +
         '      break; ' +
         '    fi; ' +
         '  done; ' +
         'fi; ' +
 
-        // Use find as last resort (search user directories)
-        'if [ -z "$CONFIG_PATH" ]; then ' +
-        '  echo "Using find as fallback..." >> "$DEBUG_LOG"; ' +
-        '  CONFIG_PATH=$(find /Users/$CURRENT_USER -maxdepth 3 -name "$CONFIG_NAME" -type f 2>/dev/null | head -1); ' +
-        '  if [ -n "$CONFIG_PATH" ]; then ' +
-        '    echo "Found via find: $CONFIG_PATH" >> "$DEBUG_LOG"; ' +
-        '  fi; ' +
-        'fi; ' +
-
+        'echo "" >> "$DEBUG_LOG"; ' +
         'echo "Final CONFIG_PATH: $CONFIG_PATH" >> "$DEBUG_LOG"; ' +
 
-        // If still not found, exit with error
-        'if [ -z "$CONFIG_PATH" ] || [ ! -f "$CONFIG_PATH" ]; then ' +
-        '  echo "Config file not found anywhere" >> "$DEBUG_LOG"; ' +
+        // If not found anywhere, exit with error 1
+        'if [ -z "$CONFIG_PATH" ]; then ' +
+        '  echo "❌ Config file not found anywhere" >> "$DEBUG_LOG"; ' +
         '  exit 1; ' +
         'fi; ' +
 
-        // Copy the config file
-        'if cat "$CONFIG_PATH" > "$TEMP_CONFIG" && chmod 644 "$TEMP_CONFIG"; then ' +
-        '  echo "Successfully copied config to $TEMP_CONFIG" >> "$DEBUG_LOG"; ' +
+        // Try to copy the config file to /tmp
+        'echo "Attempting to copy from: $CONFIG_PATH" >> "$DEBUG_LOG"; ' +
+        'if cat "$CONFIG_PATH" > "$TEMP_CONFIG" 2>> "$DEBUG_LOG" && chmod 644 "$TEMP_CONFIG"; then ' +
+        '  echo "✅ Successfully copied config to $TEMP_CONFIG" >> "$DEBUG_LOG"; ' +
         '  exit 0; ' +
         'else ' +
-        '  echo "Failed to copy config file" >> "$DEBUG_LOG"; ' +
+        '  echo "❌ Failed to copy config file (TCC restriction?)" >> "$DEBUG_LOG"; ' +
         '  exit 2; ' +
         'fi'
     );
 
     system.log("Allow2 Installer: Script result = " + scriptResult);
 
-    if (scriptResult == 4) {
-        system.log("Allow2 Installer: ERROR - Could not create temp directory");
-        my.result.type = 'Fatal';
-        my.result.title = 'Installation Error';
-        my.result.message = 'Could not create temporary directory.\n\n' +
-            'Please check disk permissions and try again.';
-        return false;
+    if (scriptResult == 0) {
+        system.log("Allow2 Installer: Config prepared successfully");
+        return true;
     }
 
     if (scriptResult == 1) {
@@ -168,37 +163,36 @@ function installation_check() {
         my.result.type = 'Fatal';
         my.result.title = 'Configuration File Required';
         my.result.message = 'The configuration file "' + configName + '" was not found.\n\n' +
-            'Please place the configuration file in one of these locations:\n' +
-            '• Downloads folder\n' +
-            '• Desktop\n' +
-            '• Same folder as the installer\n\n' +
-            'You can download the configuration file from the Allow2 Automate parent application.\n\n' +
+            'RECOMMENDED: Download the DMG installer which includes both\n' +
+            'the installer and a place for your configuration file.\n\n' +
+            'Or manually copy your config file to /tmp:\n' +
+            '  cp ~/Downloads/' + configName + ' /tmp/\n\n' +
+            'Then run this installer again.\n\n' +
             '(Debug log: /tmp/allow2-installer-debug.log)';
         return false;
     }
 
     if (scriptResult == 2) {
-        system.log("Allow2 Installer: ERROR - Failed to copy config file");
+        system.log("Allow2 Installer: ERROR - Failed to copy config (TCC?)");
         my.result.type = 'Fatal';
-        my.result.title = 'Configuration Error';
-        my.result.message = 'Found the configuration file but could not copy it.\n\n' +
-            'Please check file permissions and try again.\n\n' +
+        my.result.title = 'Configuration Error - macOS Security Restriction';
+        my.result.message = 'Found the configuration file but macOS security\n' +
+            'prevented reading it from that location.\n\n' +
+            'SOLUTION: Copy the config file to /tmp first:\n\n' +
+            '  cp ~/Downloads/' + configName + ' /tmp/\n\n' +
+            'Then run this installer again.\n\n' +
+            'Or use the DMG installer which avoids this issue.\n\n' +
             '(Debug log: /tmp/allow2-installer-debug.log)';
         return false;
     }
 
-    if (scriptResult != 0) {
-        system.log("Allow2 Installer: ERROR - Unknown error (code " + scriptResult + ")");
-        my.result.type = 'Fatal';
-        my.result.title = 'Installation Error';
-        my.result.message = 'An unexpected error occurred while preparing the configuration.\n\n' +
-            'Error code: ' + scriptResult + '\n\n' +
-            '(Debug log: /tmp/allow2-installer-debug.log)';
-        return false;
-    }
-
-    system.log("Allow2 Installer: Config prepared successfully");
-    return true;
+    // Unknown error
+    system.log("Allow2 Installer: ERROR - Unknown error (code " + scriptResult + ")");
+    my.result.type = 'Fatal';
+    my.result.title = 'Installation Error';
+    my.result.message = 'An unexpected error occurred (code ' + scriptResult + ').\n\n' +
+        '(Debug log: /tmp/allow2-installer-debug.log)';
+    return false;
 }
 ]]>
     </script>
