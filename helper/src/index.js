@@ -13,9 +13,17 @@
 import TrayManager from './TrayManager.js';
 import AgentMonitor from './AgentMonitor.js';
 import NotificationManager from './NotificationManager.js';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 const AGENT_SERVICE_URL = process.env.AGENT_SERVICE_URL || 'http://localhost:8443';
 const CHECK_INTERVAL = parseInt(process.env.CHECK_INTERVAL) || 10000; // 10 seconds
+
+// Flag file to track if startup notification was shown recently
+// Prevents notification spam if helper crashes and restarts repeatedly
+const STARTUP_FLAG_FILE = path.join(os.tmpdir(), 'allow2-helper-startup.flag');
+const STARTUP_FLAG_EXPIRY_MS = 60000; // 1 minute - don't show startup notification if restarted within 1 minute
 
 class AgentHelper {
   constructor() {
@@ -50,12 +58,18 @@ class AgentHelper {
       // Start monitoring
       this.startMonitoring();
 
-      // Show startup notification
-      this.notificationManager.notify({
-        title: 'Allow2 Agent Helper',
-        message: 'Monitoring agent connection...',
-        icon: 'info'
-      });
+      // Show startup notification only if not recently shown
+      // This prevents notification spam if helper crashes and restarts
+      if (this.shouldShowStartupNotification()) {
+        this.notificationManager.notify({
+          title: 'Allow2 Agent Helper',
+          message: 'Monitoring agent connection...',
+          icon: 'info'
+        });
+        this.markStartupNotificationShown();
+      } else {
+        console.log('[AgentHelper] Skipping startup notification (recently shown)');
+      }
 
     } catch (error) {
       console.error('[AgentHelper] Failed to start:', error);
@@ -229,6 +243,38 @@ class AgentHelper {
         icon: mostSevere.severity,
         sound: true
       });
+    }
+  }
+
+  /**
+   * Check if we should show the startup notification.
+   * Returns false if the notification was shown recently (within STARTUP_FLAG_EXPIRY_MS).
+   * This prevents notification spam when the helper crashes and restarts repeatedly.
+   */
+  shouldShowStartupNotification() {
+    try {
+      if (fs.existsSync(STARTUP_FLAG_FILE)) {
+        const stats = fs.statSync(STARTUP_FLAG_FILE);
+        const age = Date.now() - stats.mtimeMs;
+        if (age < STARTUP_FLAG_EXPIRY_MS) {
+          return false; // Flag is recent, skip notification
+        }
+      }
+      return true; // No flag or flag is old, show notification
+    } catch (error) {
+      // On error, show the notification
+      return true;
+    }
+  }
+
+  /**
+   * Mark that we've shown the startup notification by writing/updating the flag file.
+   */
+  markStartupNotificationShown() {
+    try {
+      fs.writeFileSync(STARTUP_FLAG_FILE, new Date().toISOString(), 'utf8');
+    } catch (error) {
+      console.error('[AgentHelper] Failed to write startup flag:', error.message);
     }
   }
 
