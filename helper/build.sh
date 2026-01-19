@@ -29,10 +29,10 @@ case "$CURRENT_OS" in
     Darwin)
         # macOS: Build universal binary (Intel + Apple Silicon)
         echo "Building macOS binaries (universal)..."
-        npx pkg . --targets node18-macos-x64 --output dist/allow2automate-agent-helper-macos-x64 || {
+        npx @yao-pkg/pkg . --targets node20-macos-x64 --output dist/allow2automate-agent-helper-macos-x64 || {
             echo "Warning: pkg exited with error for x64, checking if binary was created anyway..."
         }
-        npx pkg . --targets node18-macos-arm64 --output dist/allow2automate-agent-helper-macos-arm64 || {
+        npx @yao-pkg/pkg . --targets node20-macos-arm64 --output dist/allow2automate-agent-helper-macos-arm64 || {
             echo "Warning: pkg exited with error for arm64, checking if binary was created anyway..."
         }
 
@@ -55,22 +55,22 @@ case "$CURRENT_OS" in
     Linux)
         # Linux: Build Linux binary only
         echo "Building Linux binary..."
-        npx pkg . --targets node18-linux-x64 --output dist/allow2automate-agent-helper-linux || {
+        npx @yao-pkg/pkg . --targets node20-linux-x64 --output dist/allow2automate-agent-helper-linux || {
             echo "Warning: pkg exited with error, checking if binary was created anyway..."
         }
         ;;
     MINGW*|MSYS*|CYGWIN*)
         # Windows: Build Windows binary only
         echo "Building Windows binary..."
-        npx pkg . --targets node18-win-x64 --output dist/allow2automate-agent-helper-win.exe || {
+        npx @yao-pkg/pkg . --targets node20-win-x64 --output dist/allow2automate-agent-helper-win.exe || {
             echo "Warning: pkg exited with error, checking if binary was created anyway..."
         }
         ;;
     *)
         echo "Unknown OS: $CURRENT_OS"
         echo "Building for all platforms..."
-        npx pkg . --targets node18-linux-x64 --output dist/allow2automate-agent-helper-linux
-        npx pkg . --targets node18-win-x64 --output dist/allow2automate-agent-helper-win.exe
+        npx @yao-pkg/pkg . --targets node20-linux-x64 --output dist/allow2automate-agent-helper-linux
+        npx @yao-pkg/pkg . --targets node20-win-x64 --output dist/allow2automate-agent-helper-win.exe
         # Skip macOS if not on macOS (lipo not available)
         ;;
 esac

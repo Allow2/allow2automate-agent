@@ -16,7 +16,7 @@ fi
 echo "Building Windows binary..."
 mkdir -p dist
 
-npx pkg . --targets node18-win-x64 --output dist/allow2automate-agent-win.exe 2>&1 | tee pkg-output.log || {
+npx @yao-pkg/pkg . --targets node20-win-x64 --output dist/allow2automate-agent-win.exe 2>&1 | tee pkg-output.log || {
     echo "Warning: pkg exited with error, checking if binary was created anyway..."
 }
 

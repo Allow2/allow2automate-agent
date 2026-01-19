@@ -13,7 +13,7 @@
     "test:coverage": "jest --coverage",
     "lint": "eslint src/**/*.js",
     "build": "pkg . --out-path dist",
-    "build:all": "pkg . --targets node18-linux-x64,node18-macos-x64,node18-macos-arm64,node18-win-x64 --out-path dist",
+    "build:all": "pkg . --targets node20-linux-x64,node20-macos-x64,node20-macos-arm64,node20-win-x64 --out-path dist",
     "build:windows": "bash installers/windows/build.sh",
     "build:macos": "bash installers/macos/build.sh",
     "build:linux": "bash installers/linux/build.sh",
@@ -21,7 +21,7 @@
     "test:integration": "jest tests/integration"
   },
   "pkg": {
-    "targets": [ "node18-linux-x64", "node18-macos-x64", "node18-macos-arm64", "node18-win-x64" ],
+    "targets": [ "node20-linux-x64", "node20-macos-x64", "node20-macos-arm64", "node20-win-x64" ],
     "outputPath": "dist",
     "assets": [
       "src/**/*"
@@ -46,9 +46,9 @@
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",
+    "@yao-pkg/pkg": "^5.15.0",
     "eslint": "^8.50.0",
-    "jest": "^29.7.0",
-    "pkg": "^5.8.1"
+    "jest": "^29.7.0"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -16,7 +16,7 @@ fi
 echo "Building Linux binary..."
 mkdir -p dist
 
-npx pkg . --targets node18-linux-x64 --output dist/allow2automate-agent-linux 2>&1 | tee pkg-output.log || {
+npx @yao-pkg/pkg . --targets node20-linux-x64 --output dist/allow2automate-agent-linux 2>&1 | tee pkg-output.log || {
     echo "Warning: pkg exited with error, checking if binary was created anyway..."
 }
 

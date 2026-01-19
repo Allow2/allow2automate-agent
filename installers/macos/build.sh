@@ -19,13 +19,13 @@ mkdir -p dist
 
 # Build for Intel (x64)
 echo "Building for Intel (x64)..."
-npx pkg . --targets node18-macos-x64 --output dist/allow2automate-agent-macos-x64 2>&1 | tee pkg-output-x64.log || {
+npx @yao-pkg/pkg . --targets node20-macos-x64 --output dist/allow2automate-agent-macos-x64 2>&1 | tee pkg-output-x64.log || {
     echo "Warning: pkg exited with error for x64, checking if binary was created anyway..."
 }
 
 # Build for Apple Silicon (arm64)
 echo "Building for Apple Silicon (arm64)..."
-npx pkg . --targets node18-macos-arm64 --output dist/allow2automate-agent-macos-arm64 2>&1 | tee pkg-output-arm64.log || {
+npx @yao-pkg/pkg . --targets node20-macos-arm64 --output dist/allow2automate-agent-macos-arm64 2>&1 | tee pkg-output-arm64.log || {
     echo "Warning: pkg exited with error for arm64, checking if binary was created anyway..."
 }
 
