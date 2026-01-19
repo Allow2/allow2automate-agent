@@ -16,7 +16,12 @@ fi
 echo "Building Linux binary..."
 mkdir -p dist
 
-npx @yao-pkg/pkg . --targets node20-linux-x64 --output dist/allow2automate-agent-linux 2>&1 | tee pkg-output.log || {
+# STEP 1: Bundle ESM to CJS with esbuild (fixes pkg ESM compatibility issues)
+echo "Pre-bundling with esbuild (ESM -> CJS)..."
+npx esbuild src/index.js --bundle --platform=node --target=node20 --outfile=dist/bundle.cjs --format=cjs
+echo "✅ Pre-bundle complete: dist/bundle.cjs"
+
+npx @yao-pkg/pkg dist/bundle.cjs --targets node20-linux-x64 --output dist/allow2automate-agent-linux --config package.json 2>&1 | tee pkg-output.log || {
     echo "Warning: pkg exited with error, checking if binary was created anyway..."
 }
 
