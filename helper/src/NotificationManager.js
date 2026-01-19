@@ -3,10 +3,12 @@
  * Handles desktop notifications using node-notifier
  */
 
-import notifier from 'node-notifier';
-import path from 'path';
+'use strict';
 
-export default class NotificationManager {
+const notifier = require('node-notifier');
+const path = require('path');
+
+class NotificationManager {
   constructor() {
     this.notificationQueue = [];
     this.isShowing = false;
@@ -70,3 +72,5 @@ export default class NotificationManager {
     this.notificationQueue = [];
   }
 }
+
+module.exports = NotificationManager;

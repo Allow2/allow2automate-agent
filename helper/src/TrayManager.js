@@ -3,14 +3,12 @@
  * Manages the system tray icon and menu using systray
  */
 
-import SysTray from 'systray';
-import path from 'path';
-import { fileURLToPath } from 'url';
+'use strict';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const SysTray = require('systray').default;
+const path = require('path');
 
-export default class TrayManager {
+class TrayManager {
   constructor(callbacks = {}) {
     this.tray = null;
     this.callbacks = callbacks;
@@ -161,3 +159,5 @@ export default class TrayManager {
     }
   }
 }
+
+module.exports = TrayManager;

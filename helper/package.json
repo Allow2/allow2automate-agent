@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "User-space helper for Allow2 Automate Agent - system tray and notifications",
   "main": "src/index.js",
-  "type": "module",
   "bin": "src/index.js",
   "scripts": {
     "start": "node src/index.js",

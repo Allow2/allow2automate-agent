@@ -4,7 +4,9 @@
  * Uses Node.js built-in fetch (Node 18+)
  */
 
-export default class AgentMonitor {
+'use strict';
+
+class AgentMonitor {
   constructor(agentUrl) {
     this.agentUrl = agentUrl;
   }
@@ -86,3 +88,5 @@ export default class AgentMonitor {
     }
   }
 }
+
+module.exports = AgentMonitor;

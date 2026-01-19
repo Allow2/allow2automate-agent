@@ -13,9 +13,9 @@ else
     echo "Version from environment: $VERSION"
 fi
 
-# Clean previous node_modules to ensure fresh install
-echo "Cleaning previous node_modules..."
-rm -rf node_modules package-lock.json
+# Clean previous builds and node_modules to ensure fresh install
+echo "Cleaning previous builds and node_modules..."
+rm -rf node_modules package-lock.json dist
 
 # Install ALL dependencies (including devDependencies for @yao-pkg/pkg)
 echo "Installing dependencies..."

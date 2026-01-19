@@ -10,12 +10,14 @@
  * It communicates with the main agent service via HTTP on localhost.
  */
 
-import TrayManager from './TrayManager.js';
-import AgentMonitor from './AgentMonitor.js';
-import NotificationManager from './NotificationManager.js';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+'use strict';
+
+const TrayManager = require('./TrayManager');
+const AgentMonitor = require('./AgentMonitor');
+const NotificationManager = require('./NotificationManager');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 const AGENT_SERVICE_URL = process.env.AGENT_SERVICE_URL || 'http://localhost:8443';
 const CHECK_INTERVAL = parseInt(process.env.CHECK_INTERVAL) || 10000; // 10 seconds
