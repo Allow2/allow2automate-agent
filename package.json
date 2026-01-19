@@ -40,7 +40,6 @@
     "bonjour-service": "^1.1.0",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
-    "node-fetch": "^3.3.0",
     "uuid": "^9.0.1",
     "winston": "^3.11.0"
   },

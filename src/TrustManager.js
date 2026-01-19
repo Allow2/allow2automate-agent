@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import fetch from 'node-fetch';
 
 /**
  * TrustManager - Manages cryptographic verification of parent authenticity

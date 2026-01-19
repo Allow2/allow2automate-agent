@@ -1,4 +1,3 @@
-import fetch from 'node-fetch';
 import DiscoveryClient from './DiscoveryClient.js';
 import TrustManager from './TrustManager.js';
 
