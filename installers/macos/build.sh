@@ -482,13 +482,32 @@ cp installers/macos/readme.html "$RESOURCES_DIR/"
 
 # First, build component package (the actual payload)
 COMPONENT_PKG="$BUILD_DIR/allow2automate-agent-component.pkg"
-pkgbuild \
-    --root "$PAYLOAD_DIR" \
-    --scripts "$SCRIPTS_DIR" \
-    --identifier "com.allow2.automate-agent" \
-    --version "$VERSION" \
-    --install-location "/" \
-    "$COMPONENT_PKG"
+
+# Sign the component package if installer identity is available
+# This is REQUIRED - without it, the Payload verification fails during install
+if [ -n "$INSTALLER_IDENTITY_HASH" ] && [ -n "$KEYCHAIN_PATH" ]; then
+    echo "Building and signing component package..."
+    pkgbuild \
+        --root "$PAYLOAD_DIR" \
+        --scripts "$SCRIPTS_DIR" \
+        --identifier "com.allow2.automate-agent" \
+        --version "$VERSION" \
+        --install-location "/" \
+        --sign "$INSTALLER_IDENTITY_HASH" \
+        --keychain "$KEYCHAIN_PATH" \
+        "$COMPONENT_PKG"
+    echo "✅ Component package signed"
+else
+    echo "Building unsigned component package..."
+    pkgbuild \
+        --root "$PAYLOAD_DIR" \
+        --scripts "$SCRIPTS_DIR" \
+        --identifier "com.allow2.automate-agent" \
+        --version "$VERSION" \
+        --install-location "/" \
+        "$COMPONENT_PKG"
+    echo "⚠️  Component package is NOT signed - installation may fail on modern macOS"
+fi
 
 # Then, build product archive with distribution XML
 PKG_NAME="allow2automate-agent-darwin-universal-v${VERSION}.pkg"
