@@ -13,9 +13,13 @@ else
     echo "Version from environment: $VERSION"
 fi
 
-# Install dependencies
+# Install ALL dependencies (including devDependencies for @yao-pkg/pkg)
 echo "Installing dependencies..."
-npm install --production
+npm install
+
+# Clear npx cache to ensure we use the correct @yao-pkg/pkg version
+echo "Clearing npx cache for pkg..."
+npx --yes clear-npx-cache 2>/dev/null || true
 
 # Build binaries
 echo "Building binaries..."
