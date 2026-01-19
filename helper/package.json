@@ -30,7 +30,6 @@
   "author": "Allow2",
   "license": "MIT",
   "dependencies": {
-    "node-fetch": "^3.3.0",
     "node-notifier": "^10.0.1",
     "systray": "^1.0.5"
   },

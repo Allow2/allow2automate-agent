@@ -13,6 +13,10 @@ else
     echo "Version from environment: $VERSION"
 fi
 
+# Clean previous node_modules to ensure fresh install
+echo "Cleaning previous node_modules..."
+rm -rf node_modules package-lock.json
+
 # Install ALL dependencies (including devDependencies for @yao-pkg/pkg)
 echo "Installing dependencies..."
 npm install
