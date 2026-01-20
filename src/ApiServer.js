@@ -142,13 +142,9 @@ class ApiServer {
         const port = this.configManager.get('port');
         const parentUrl = (host && port) ? `http://${host}:${port}` : null;
         const agentId = this.configManager.get('agentId');
-        const lastHeartbeat = this.policyEngine.getLastSyncTime();
 
-        // Check if we've successfully connected to parent recently
-        const now = Date.now();
-        const lastSync = lastHeartbeat ? new Date(lastHeartbeat).getTime() : 0;
-        const timeSinceSync = now - lastSync;
-        const parentConnected = isConfigured && timeSinceSync < 120000; // Connected if synced in last 2 minutes
+        // Get connection status from ConnectionStateManager
+        const connectionStatus = this.policyEngine.getConnectionStatus();
 
         // Get policy count
         const policies = this.policyEngine.getAllPolicies();
@@ -161,13 +157,21 @@ class ApiServer {
 
         res.json({
           connected: true,
-          parentConnected,
+          // Connection state from ConnectionStateManager
+          connectionState: connectionStatus.state,
+          online: connectionStatus.online,
+          parentConnected: connectionStatus.online,
           parentUrl: parentUrl || null,
           agentId: agentId || null,
           hostname: os.hostname(),
           version: this.configManager.get('version') || '1.0.0',
           uptime: Math.floor(process.uptime()),
-          lastHeartbeat: lastHeartbeat || null,
+          lastSync: connectionStatus.lastSuccessfulSync,
+          timeSinceSync: connectionStatus.timeSinceSync,
+          offlineDuration: connectionStatus.offlineDuration,
+          offlineSince: connectionStatus.offlineSince,
+          consecutiveFailures: connectionStatus.consecutiveFailures,
+          nextRetry: connectionStatus.retryInterval,
           configured: isConfigured,
           monitoringActive: this.processMonitor.isRunning,
           policyCount: policies.length,
@@ -179,6 +183,7 @@ class ApiServer {
         this.logger.error('Helper status error', { error: error.message });
         res.status(500).json({
           connected: true,
+          connectionState: 'unknown',
           parentConnected: false,
           errors: [{
             type: 'status_error',

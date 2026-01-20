@@ -1,5 +1,6 @@
 import DiscoveryClient from './DiscoveryClient.js';
 import TrustManager from './TrustManager.js';
+import ConnectionStateManager from './ConnectionStateManager.js';
 
 /**
  * PolicyEngine manages process policies and synchronization with parent
@@ -15,12 +16,16 @@ class PolicyEngine {
     this.policies = new Map();
     this.discoveryClient = new DiscoveryClient(logger);
     this.trustManager = new TrustManager(configManager, logger);
+    this.connectionState = new ConnectionStateManager(configManager, logger);
     this.cachedParentConnection = null; // Cache discovered parent
 
     // Plugin extension manager reference (set after construction)
     this.pluginExtensionManager = null;
 
     this.loadPoliciesFromCache();
+
+    // Initialize connection state
+    this.connectionState.initialize();
   }
 
   /**
@@ -253,6 +258,7 @@ class PolicyEngine {
 
   /**
    * Sync policies from parent API
+   * @returns {Promise<boolean>} success
    */
   async syncFromParent() {
     const authToken = this.configManager.get('authToken');
@@ -260,6 +266,7 @@ class PolicyEngine {
 
     if (!authToken) {
       this.logger.warn('Cannot sync: auth token not configured');
+      this.connectionState.onSyncFailure();
       return false;
     }
 
@@ -268,6 +275,7 @@ class PolicyEngine {
 
     if (!parentConnection) {
       this.logger.warn('Cannot sync: no parent connection available');
+      this.connectionState.onSyncFailure();
       return false;
     }
 
@@ -278,10 +286,11 @@ class PolicyEngine {
     try {
       await this.trustManager.verifyParent(parentApiUrl);
     } catch (verificationError) {
-      this.logger.error('🚨 REFUSING to sync with unverified parent', {
+      this.logger.error('REFUSING to sync with unverified parent', {
         parentUrl: parentApiUrl,
         error: verificationError.message
       });
+      this.connectionState.onSyncFailure();
       return false;
     }
 
@@ -296,7 +305,10 @@ class PolicyEngine {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const remotePolicies = await response.json();
+      const data = await response.json();
+
+      // Handle response format - could be array or object with policies
+      const remotePolicies = Array.isArray(data) ? data : (data.policies || []);
 
       // Update local policies
       this.policies.clear();
@@ -307,7 +319,20 @@ class PolicyEngine {
       await this.saveToCache();
       this.configManager.set('lastSync', new Date().toISOString());
 
+      // Record successful sync
+      const recoveryInfo = this.connectionState.onSyncSuccess();
+
       this.logger.info(`Synced ${remotePolicies.length} policies from parent`);
+
+      // Update offline mode settings if provided
+      if (data.offlineSettings) {
+        this.connectionState.updateSettingsFromParent(data.offlineSettings);
+      }
+
+      // Report offline recovery if we were offline
+      if (recoveryInfo.offlineDuration > 0) {
+        await this.reportOfflineRecovery(parentApiUrl, recoveryInfo.offlineDuration);
+      }
 
       // Sync plugin data if plugin manager is available
       if (this.pluginExtensionManager) {
@@ -317,8 +342,51 @@ class PolicyEngine {
       return true;
     } catch (error) {
       this.logger.error('Failed to sync policies from parent', { error: error.message });
+      this.connectionState.onSyncFailure();
+
+      // Clear cached connection on failure to retry discovery
+      if (this.connectionState.getState() === 'degraded') {
+        this.cachedParentConnection = null;
+      }
+
       return false;
     }
+  }
+
+  /**
+   * Report to parent that agent was offline
+   * @param {string} parentApiUrl
+   * @param {number} offlineDuration - milliseconds
+   */
+  async reportOfflineRecovery(parentApiUrl, offlineDuration) {
+    try {
+      const agentId = this.configManager.get('agentId');
+      this.logger.info('Reporting offline recovery to parent', {
+        offlineDurationSeconds: Math.round(offlineDuration / 1000)
+      });
+
+      await fetch(`${parentApiUrl}/api/agents/${agentId}/offline-recovery`, {
+        method: 'POST',
+        headers: this.buildApiHeaders(),
+        body: JSON.stringify({
+          offlineDuration,
+          recoveredAt: Date.now()
+        })
+      });
+    } catch (error) {
+      // Non-critical - log and continue
+      this.logger.warn('Failed to report offline recovery', {
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Get connection status for API/helper
+   * @returns {Object}
+   */
+  getConnectionStatus() {
+    return this.connectionState.getStatus();
   }
 
   /**

@@ -30,6 +30,7 @@ class Allow2AutomateAgent {
     this.autoUpdater = null;
     this.pluginExtensionManager = null;
     this.isShuttingDown = false;
+    this.syncTimer = null;
   }
 
   /**
@@ -129,16 +130,6 @@ class Allow2AutomateAgent {
       await this.apiServer.start();
       this.logger.info('API server started');
 
-      // Sync policies if configured
-      // (PolicyEngine will use mDNS to discover parent if enabled)
-      if (this.configManager.isConfigured()) {
-        this.logger.info('Agent is configured, syncing policies...');
-        await this.policyEngine.syncFromParent();
-      } else {
-        this.logger.warn('Agent is not configured. Waiting for parent pairing...');
-        this.logger.info('To configure, use the parent app to discover and pair this agent');
-      }
-
       // Start process monitoring
       await this.processMonitor.start();
       this.logger.info('Process monitoring started');
@@ -153,6 +144,9 @@ class Allow2AutomateAgent {
         this.logger.info('Auto-update checking started');
       }
 
+      // Start adaptive sync loop (agent pulls from parent)
+      this.startAdaptiveSyncLoop();
+
       this.logger.info('=== Allow2Automate Agent is running ===');
       this.logStatus();
 
@@ -160,6 +154,48 @@ class Allow2AutomateAgent {
       this.logger.error('Failed to start agent', { error: error.message });
       throw error;
     }
+  }
+
+  /**
+   * Start adaptive sync loop based on connection state
+   * This is the core of the pull-based communication model:
+   * - Agent initiates all connections to parent
+   * - Sync interval adapts based on connection state
+   * - ONLINE: normal interval (30s)
+   * - DEGRADED: slower (2min)
+   * - OFFLINE: very slow (10min)
+   */
+  startAdaptiveSyncLoop() {
+    const syncLoop = async () => {
+      if (this.isShuttingDown) return;
+
+      try {
+        if (this.configManager.isConfigured()) {
+          await this.policyEngine.syncFromParent();
+        } else {
+          this.logger.debug('Agent not configured, skipping sync');
+        }
+      } catch (error) {
+        this.logger.error('Sync loop error', { error: error.message });
+      }
+
+      if (this.isShuttingDown) return;
+
+      // Schedule next sync based on connection state
+      const interval = this.policyEngine.connectionState.getRetryInterval();
+      const state = this.policyEngine.connectionState.getState();
+
+      this.syncTimer = setTimeout(syncLoop, interval);
+
+      this.logger.debug('Next sync scheduled', {
+        seconds: Math.round(interval / 1000),
+        state
+      });
+    };
+
+    // Start loop immediately
+    this.logger.info('Starting adaptive sync loop (pull-based communication)');
+    syncLoop();
   }
 
   /**
@@ -194,6 +230,13 @@ class Allow2AutomateAgent {
     this.logger.info(`Received ${signal}, shutting down gracefully...`);
 
     try {
+      // Stop sync timer
+      if (this.syncTimer) {
+        clearTimeout(this.syncTimer);
+        this.syncTimer = null;
+        this.logger.info('Sync timer stopped');
+      }
+
       // Stop auto-updater
       if (this.autoUpdater) {
         this.autoUpdater.stopAutoCheck();
