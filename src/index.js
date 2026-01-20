@@ -5,8 +5,6 @@
  * System service for process monitoring and parental controls
  */
 
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 import process from 'process';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -18,9 +16,6 @@ import ProcessMonitor from './ProcessMonitor.js';
 import ApiServer from './ApiServer.js';
 import AutoUpdater from './AutoUpdater.js';
 import PluginExtensionManager from './PluginExtensionManager.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 /**
  * Agent class - orchestrates all services

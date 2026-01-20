@@ -71,7 +71,7 @@ Source: "{#SourceDir}\allow2automate-agent-win.exe"; DestDir: "{app}"; DestName:
 Source: "{#SourceDir}\allow2automate-agent-helper-win.exe"; DestDir: "{app}\Helper"; DestName: "{#HelperExeName}"; Flags: ignoreversion skipifsourcedoesntexist; Tasks: installhelper
 
 ; Configuration file - handled by custom code for auto-discovery/browse
-Source: "{code:GetConfigSourcePath}"; DestDir: "{commonappdata}\Allow2"; DestName: "config.json"; \
+Source: "{code:GetConfigSourcePath}"; DestDir: "{commonappdata}\Allow2\agent"; DestName: "config.json"; \
   Flags: ignoreversion external skipifsourcedoesntexist onlyifdoesntexist; Check: ShouldInstallConfigFile
 
 ; Uninstall script
@@ -80,7 +80,8 @@ Source: "uninstall.bat"; DestDir: "{app}"; Flags: ignoreversion
 [Dirs]
 ; Create data directory with appropriate permissions
 Name: "{commonappdata}\Allow2"; Permissions: everyone-full
-Name: "{commonappdata}\Allow2\logs"; Permissions: everyone-full
+Name: "{commonappdata}\Allow2\agent"; Permissions: everyone-full
+Name: "{commonappdata}\Allow2\agent\logs"; Permissions: everyone-full
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"
@@ -204,7 +205,7 @@ function ConfigFileExistsAtDestination: Boolean;
 var
   DestPath: string;
 begin
-  DestPath := ExpandConstant('{commonappdata}\Allow2\config.json');
+  DestPath := ExpandConstant('{commonappdata}\Allow2\agent\config.json');
   Result := FileExists(DestPath);
   if Result then
     Log('Existing config file found at: ' + DestPath);
@@ -261,7 +262,7 @@ begin
           if MsgBox('No configuration file was selected.' + #13#10 + #13#10 +
                     'Continue installation without a configuration file?' + #13#10 + #13#10 +
                     'Note: The agent will not function until a config.json file is placed in:' + #13#10 +
-                    '  C:\ProgramData\Allow2\',
+                    '  C:\ProgramData\Allow2\agent\',
                     mbConfirmation, MB_YESNO) = IDNO then
           begin
             Result := False;  // Abort installation
@@ -302,7 +303,7 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
-    InstalledConfigPath := ExpandConstant('{commonappdata}\Allow2\config.json');
+    InstalledConfigPath := ExpandConstant('{commonappdata}\Allow2\agent\config.json');
 
     if FileExists(InstalledConfigPath) then
     begin
@@ -315,7 +316,7 @@ begin
       MsgBox('Installation complete!' + #13#10 + #13#10 +
              'IMPORTANT: No configuration file was installed. The agent will not' + #13#10 +
              'function until you add a config.json file to:' + #13#10 + #13#10 +
-             '  C:\ProgramData\Allow2\config.json' + #13#10 + #13#10 +
+             '  C:\ProgramData\Allow2\agent\config.json' + #13#10 + #13#10 +
              'You can obtain a configuration file from the Allow2 parent app.',
              mbInformation, MB_OK);
     end;

@@ -1,10 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 /**
  * ConfigManager handles loading, saving, and managing agent configuration
