@@ -12,6 +12,32 @@ else
     echo "Version from git tag: $VERSION"
 fi
 
+# Detect architecture
+ARCH=$(uname -m)
+echo "Detected architecture: $ARCH"
+
+case "$ARCH" in
+    x86_64)
+        PKG_TARGET="node20-linux-x64"
+        DEB_ARCH="amd64"
+        RPM_ARCH="x86_64"
+        ;;
+    aarch64|arm64)
+        PKG_TARGET="node20-linux-arm64"
+        DEB_ARCH="arm64"
+        RPM_ARCH="aarch64"
+        ;;
+    *)
+        echo "Unsupported architecture: $ARCH"
+        echo "Defaulting to amd64"
+        PKG_TARGET="node20-linux-x64"
+        DEB_ARCH="amd64"
+        RPM_ARCH="x86_64"
+        ;;
+esac
+
+echo "Build target: $PKG_TARGET, DEB: $DEB_ARCH, RPM: $RPM_ARCH"
+
 # Build the binary with pkg
 echo "Building Linux binary..."
 mkdir -p dist
@@ -21,7 +47,7 @@ echo "Pre-bundling with esbuild (ESM -> CJS)..."
 npx esbuild src/index.js --bundle --platform=node --target=node20 --outfile=dist/bundle.cjs --format=cjs
 echo "✅ Pre-bundle complete: dist/bundle.cjs"
 
-npx @yao-pkg/pkg dist/bundle.cjs --targets node20-linux-x64 --output dist/allow2automate-agent-linux --config package.json 2>&1 | tee pkg-output.log || {
+npx @yao-pkg/pkg dist/bundle.cjs --targets $PKG_TARGET --output dist/allow2automate-agent-linux --config package.json 2>&1 | tee pkg-output.log || {
     echo "Warning: pkg exited with error, checking if binary was created anyway..."
 }
 
@@ -81,7 +107,7 @@ cp helper/autostart/linux/allow2-agent-helper.desktop "$BUILD_DIR/etc/xdg/autost
 # Create systemd service
 cat > "$BUILD_DIR/lib/systemd/system/allow2automate-agent.service" << EOF
 [Unit]
-Description=Allow2 Automate Agent
+Description=Allow2Automate Agent
 After=network.target
 
 [Service]
@@ -104,7 +130,7 @@ systemctl daemon-reload
 systemctl enable allow2automate-agent.service
 systemctl start allow2automate-agent.service
 
-echo "✅ Allow2 Automate Agent installed and started"
+echo "✅ Allow2Automate Agent installed and started"
 echo "Helper will start automatically on next user login"
 exit 0
 SCRIPT
@@ -120,35 +146,35 @@ SCRIPT
 chmod +x installers/linux/prerm.sh
 
 # Build DEB
-echo "Building DEB package..."
+echo "Building DEB package for $DEB_ARCH..."
 fpm -s dir -t deb \
     -n allow2automate-agent \
     -v "$VERSION" \
-    --description "Agent service for process monitoring and parental controls" \
+    --description "Allow2Automate Agent - process monitoring and parental controls" \
     --url "https://github.com/Allow2/allow2automate-agent" \
     --maintainer "Allow2 <support@allow2.com>" \
     --license "MIT" \
-    --architecture amd64 \
+    --architecture "$DEB_ARCH" \
     --after-install installers/linux/postinst.sh \
     --before-remove installers/linux/prerm.sh \
     --deb-systemd "$BUILD_DIR/lib/systemd/system/allow2automate-agent.service" \
-    --package "$DIST_DIR/allow2automate-agent_${VERSION}_amd64.deb" \
+    --package "$DIST_DIR/allow2automate-agent_${VERSION}_${DEB_ARCH}.deb" \
     -C "$BUILD_DIR" \
     .
 
 # Build RPM
-echo "Building RPM package..."
+echo "Building RPM package for $RPM_ARCH..."
 fpm -s dir -t rpm \
     -n allow2automate-agent \
     -v "$VERSION" \
-    --description "Agent service for process monitoring and parental controls" \
+    --description "Allow2Automate Agent - process monitoring and parental controls" \
     --url "https://github.com/Allow2/allow2automate-agent" \
     --maintainer "Allow2 <support@allow2.com>" \
     --license "MIT" \
-    --architecture x86_64 \
+    --architecture "$RPM_ARCH" \
     --after-install installers/linux/postinst.sh \
     --before-remove installers/linux/prerm.sh \
-    --package "$DIST_DIR/allow2automate-agent-${VERSION}.x86_64.rpm" \
+    --package "$DIST_DIR/allow2automate-agent-${VERSION}.${RPM_ARCH}.rpm" \
     -C "$BUILD_DIR" \
     .
 

@@ -1,6 +1,6 @@
-# Allow2 Automate Agent - User Helper
+# Allow2Automate Agent Helper
 
-User-space companion app for the Allow2 Automate Agent system service.
+User-space companion app for the Allow2Automate Agent system service.
 
 ## Purpose
 
@@ -35,7 +35,7 @@ The main agent runs as a privileged system service (root/SYSTEM) and cannot disp
 The helper is automatically installed with the main agent and configured to run at user login.
 
 ### macOS
-- Location: `/Applications/Allow2AgentHelper.app`
+- Location: `/usr/local/bin/allow2automate-agent-helper`
 - Autostart: `/Library/LaunchAgents/com.allow2.agent-helper.plist`
 
 ### Linux
@@ -43,8 +43,8 @@ The helper is automatically installed with the main agent and configured to run 
 - Autostart: `/etc/xdg/autostart/allow2-agent-helper.desktop`
 
 ### Windows
-- Location: `C:\Program Files\Allow2\AgentHelper\allow2-agent-helper.exe`
-- Autostart: Startup folder shortcut
+- Location: `C:\Program Files\Allow2\agent\helper\allow2automate-agent-helper.exe`
+- Autostart: Startup folder shortcut (`allow2automate-agent-helper.lnk`)
 
 ## Dependencies
 
@@ -103,7 +103,7 @@ Environment variables:
 ## Troubleshooting
 
 **Helper not showing in tray:**
-- Ensure the helper process is running: `ps aux | grep allow2-agent-helper`
+- Ensure the helper process is running: `ps aux | grep allow2automate-agent-helper`
 - Check helper logs (location varies by platform)
 - Restart the helper or re-login
 

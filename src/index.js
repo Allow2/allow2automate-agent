@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Allow2 Automate Agent - Main Entry Point
+ * Allow2Automate Agent - Main Entry Point
  * System service for process monitoring and parental controls
  */
 
@@ -36,7 +36,7 @@ class Allow2AutomateAgent {
    * Initialize all components
    */
   async initialize() {
-    console.log('=== Allow2 Automate Agent ===');
+    console.log('=== Allow2Automate Agent ===');
     console.log('Version: 1.0.0');
     console.log('Platform:', process.platform);
     console.log('');
@@ -47,7 +47,7 @@ class Allow2AutomateAgent {
 
     // Initialize logger
     this.logger = new Logger(this.configManager.get('logLevel') || 'info');
-    this.logger.info('=== Starting Allow2 Automate Agent ===', {
+    this.logger.info('=== Starting Allow2Automate Agent ===', {
       version: '1.0.0',
       platform: process.platform,
       nodeVersion: process.version
@@ -153,7 +153,7 @@ class Allow2AutomateAgent {
         this.logger.info('Auto-update checking started');
       }
 
-      this.logger.info('=== Allow2 Automate Agent is running ===');
+      this.logger.info('=== Allow2Automate Agent is running ===');
       this.logStatus();
 
     } catch (error) {
@@ -217,7 +217,7 @@ class Allow2AutomateAgent {
         this.logger.info('API server stopped');
       }
 
-      this.logger.info('=== Allow2 Automate Agent stopped ===');
+      this.logger.info('=== Allow2Automate Agent stopped ===');
       process.exit(0);
     } catch (error) {
       this.logger.error('Error during shutdown', { error: error.message });

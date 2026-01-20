@@ -1,8 +1,8 @@
 @echo off
-REM Remove startup shortcut for Allow2 Agent Helper
+REM Remove startup shortcut for allow2automate-agent-helper
 
 set STARTUP_FOLDER=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup
-set SHORTCUT=%STARTUP_FOLDER%\Allow2 Agent Helper.lnk
+set SHORTCUT=%STARTUP_FOLDER%\allow2automate-agent-helper.lnk
 
 echo Removing startup shortcut...
 

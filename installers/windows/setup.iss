@@ -14,7 +14,7 @@
   #define SourceDir "..\..\dist"
 #endif
 
-#define AppName "Allow2 Automate Agent"
+#define AppName "Allow2Automate Agent"
 #define AppPublisher "Allow2 Pty Ltd"
 #define AppURL "https://github.com/allow2/allow2automate-agent"
 #define AppExeName "allow2automate-agent.exe"
@@ -68,7 +68,7 @@ Name: "installhelper"; Description: "Install user helper (tray icon for status)"
 Source: "{#SourceDir}\allow2automate-agent-win.exe"; DestDir: "{app}"; DestName: "{#AppExeName}"; Flags: ignoreversion
 
 ; Helper binary (optional - only if it exists)
-Source: "{#SourceDir}\allow2automate-agent-helper-win.exe"; DestDir: "{app}\Helper"; DestName: "{#HelperExeName}"; Flags: ignoreversion skipifsourcedoesntexist; Tasks: installhelper
+Source: "{#SourceDir}\allow2automate-agent-helper-win.exe"; DestDir: "{app}\agent\helper"; DestName: "{#HelperExeName}"; Flags: ignoreversion skipifsourcedoesntexist; Tasks: installhelper
 
 ; Configuration file - handled by custom code for auto-discovery/browse
 Source: "{code:GetConfigSourcePath}"; DestDir: "{commonappdata}\Allow2\agent"; DestName: "config.json"; \
@@ -93,14 +93,14 @@ Filename: "{app}\{#AppExeName}"; Parameters: "install"; StatusMsg: "Installing W
 ; Start service if requested
 Filename: "sc.exe"; Parameters: "start Allow2AutomateAgent"; StatusMsg: "Starting service..."; Flags: runhidden waituntilterminated; Tasks: startservice
 ; Install helper autostart if requested
-Filename: "{cmd}"; Parameters: "/c copy ""{app}\Helper\{#HelperExeName}"" ""%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Allow2 Agent Helper.exe"""; Flags: runhidden; Tasks: installhelper
+Filename: "{cmd}"; Parameters: "/c copy ""{app}\agent\helper\{#HelperExeName}"" ""%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\allow2automate-agent-helper.exe"""; Flags: runhidden; Tasks: installhelper
 
 [UninstallRun]
 ; Stop and remove service
 Filename: "sc.exe"; Parameters: "stop Allow2AutomateAgent"; Flags: runhidden waituntilterminated
 Filename: "sc.exe"; Parameters: "delete Allow2AutomateAgent"; Flags: runhidden waituntilterminated
 ; Remove helper autostart
-Filename: "{cmd}"; Parameters: "/c del /f /q ""%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Allow2 Agent Helper.exe"""; Flags: runhidden
+Filename: "{cmd}"; Parameters: "/c del /f /q ""%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\allow2automate-agent-helper.exe"""; Flags: runhidden
 
 [Code]
 var

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "Building Allow2 Agent Helper..."
+echo "Building allow2automate-agent-helper..."
 
 cd "$(dirname "$0")"
 
@@ -61,9 +61,23 @@ case "$CURRENT_OS" in
         fi
         ;;
     Linux)
-        # Linux: Build Linux binary only
+        # Linux: Build Linux binary for detected architecture
         echo "Building Linux binary..."
-        npx @yao-pkg/pkg . --targets node20-linux-x64 --output dist/allow2automate-agent-helper-linux || {
+        ARCH=$(uname -m)
+        case "$ARCH" in
+            x86_64)
+                PKG_TARGET="node20-linux-x64"
+                ;;
+            aarch64|arm64)
+                PKG_TARGET="node20-linux-arm64"
+                ;;
+            *)
+                echo "Unsupported architecture: $ARCH, defaulting to x64"
+                PKG_TARGET="node20-linux-x64"
+                ;;
+        esac
+        echo "Building for $PKG_TARGET..."
+        npx @yao-pkg/pkg . --targets $PKG_TARGET --output dist/allow2automate-agent-helper-linux || {
             echo "Warning: pkg exited with error, checking if binary was created anyway..."
         }
         ;;

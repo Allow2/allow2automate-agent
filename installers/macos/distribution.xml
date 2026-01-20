@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-    <title>Allow2 Automate Agent</title>
+    <title>Allow2Automate Agent</title>
     <organization>com.allow2</organization>
     <domains enable_localSystem="true"/>
     <options customize="never" require-scripts="true" rootVolumeOnly="true" allow-external-scripts="yes" />

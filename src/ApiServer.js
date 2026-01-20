@@ -1,9 +1,12 @@
 import express from 'express';
-import jwt from 'jsonwebtoken';
 import os from 'os';
 
 /**
- * ApiServer provides REST API for agent management
+ * ApiServer provides REST API for local helper app ONLY
+ *
+ * SECURITY: This server ONLY serves localhost requests from the helper app.
+ * The agent does NOT accept any connections from the Allow2Automate parent app.
+ * All communication with parent is OUTBOUND ONLY via polling in PolicyEngine.
  */
 class ApiServer {
   /**
@@ -52,6 +55,22 @@ class ApiServer {
   setupMiddleware() {
     this.app.use(express.json());
 
+    // SECURITY: Only allow localhost connections
+    this.app.use((req, res, next) => {
+      const clientIp = req.ip || req.connection.remoteAddress;
+      const isLocalhost = clientIp === '127.0.0.1' ||
+                          clientIp === '::1' ||
+                          clientIp === '::ffff:127.0.0.1' ||
+                          clientIp === 'localhost';
+
+      if (!isLocalhost) {
+        this.logger.warn('Rejected non-localhost connection', { ip: clientIp, path: req.path });
+        return res.status(403).json({ error: 'Forbidden - localhost only' });
+      }
+
+      next();
+    });
+
     // Request logging
     this.app.use((req, res, next) => {
       this.logger.debug(`${req.method} ${req.path}`, {
@@ -77,14 +96,17 @@ class ApiServer {
   }
 
   /**
-   * Setup API routes
+   * Setup API routes - LOCALHOST ONLY for helper app
+   *
+   * NOTE: The agent does NOT expose any endpoints for the parent app to call.
+   * All communication with parent is OUTBOUND via polling in PolicyEngine.
    */
   setupRoutes() {
-    // Health check (no auth required)
+    // Health check (for helper app)
     this.app.get('/api/health', (req, res) => {
       res.json({
         status: 'ok',
-        version: this.configManager.get('version'),
+        version: this.configManager.get('version') || '1.0.0',
         agentId: this.configManager.get('agentId'),
         hostname: os.hostname(),
         platform: process.platform,
@@ -93,7 +115,7 @@ class ApiServer {
       });
     });
 
-    // Heartbeat (no auth required for discovery)
+    // Heartbeat (for helper app keepalive)
     this.app.post('/api/heartbeat', (req, res) => {
       res.json({
         status: 'alive',
@@ -102,7 +124,7 @@ class ApiServer {
       });
     });
 
-    // Platform users discovery (no auth required)
+    // Platform users discovery (for helper app display)
     this.app.get('/api/platform-users', async (req, res) => {
       try {
         const users = await this.getPlatformUsers();
@@ -112,7 +134,7 @@ class ApiServer {
       }
     });
 
-    // Helper status endpoint (no auth required - localhost only)
+    // Helper status endpoint - primary interface for helper app
     this.app.get('/api/helper/status', (req, res) => {
       try {
         const isConfigured = this.configManager.isConfigured();
@@ -128,6 +150,15 @@ class ApiServer {
         const timeSinceSync = now - lastSync;
         const parentConnected = isConfigured && timeSinceSync < 120000; // Connected if synced in last 2 minutes
 
+        // Get policy count
+        const policies = this.policyEngine.getAllPolicies();
+
+        // Get plugin status if available
+        let pluginStatus = null;
+        if (this.pluginExtensionManager) {
+          pluginStatus = this.pluginExtensionManager.getStatus();
+        }
+
         res.json({
           connected: true,
           parentConnected,
@@ -139,6 +170,9 @@ class ApiServer {
           lastHeartbeat: lastHeartbeat || null,
           configured: isConfigured,
           monitoringActive: this.processMonitor.isRunning,
+          policyCount: policies.length,
+          pluginMonitors: pluginStatus?.monitors?.length || 0,
+          pluginActions: pluginStatus?.actions?.length || 0,
           errors: []
         });
       } catch (error) {
@@ -154,21 +188,45 @@ class ApiServer {
       }
     });
 
-    // Helper command endpoint (no auth required - localhost only)
+    // Helper command endpoint - for helper app to trigger local actions
     this.app.post('/api/helper/command', async (req, res) => {
       try {
         const { command, params } = req.body;
 
         switch (command) {
           case 'sync':
+            // Trigger immediate sync with parent
             await this.policyEngine.syncFromParent();
-            res.json({ success: true, message: 'Policies synced' });
+            res.json({ success: true, message: 'Sync triggered' });
             break;
 
           case 'restart_monitoring':
             await this.processMonitor.stop();
             await this.processMonitor.start();
             res.json({ success: true, message: 'Monitoring restarted' });
+            break;
+
+          case 'check_update':
+            // Trigger update check
+            if (this.autoUpdater) {
+              const updateInfo = await this.autoUpdater.checkForUpdate();
+              res.json({ success: true, updateInfo });
+            } else {
+              res.json({ success: false, message: 'Auto-updater not available' });
+            }
+            break;
+
+          case 'get_policies':
+            // Get current policies for display
+            const policies = this.policyEngine.getAllPolicies();
+            res.json({ success: true, policies });
+            break;
+
+          case 'get_processes':
+            // Get running processes
+            const platform = await this.getPlatform();
+            const processes = await platform.getProcessList();
+            res.json({ success: true, processes });
             break;
 
           default:
@@ -180,386 +238,17 @@ class ApiServer {
       }
     });
 
-    // All routes below require authentication
-    this.app.use('/api', this.authenticateJWT.bind(this));
-
-    // Policy management
-    this.app.post('/api/policies', async (req, res) => {
-      try {
-        const policy = await this.policyEngine.createPolicy(req.body);
-        res.status(201).json(policy);
-      } catch (error) {
-        res.status(400).json({ error: error.message });
-      }
+    // Catch-all for any other routes - reject them
+    this.app.use('*', (req, res) => {
+      this.logger.warn('Rejected request to non-existent endpoint', {
+        method: req.method,
+        path: req.originalUrl
+      });
+      res.status(404).json({
+        error: 'Not found',
+        message: 'This agent only serves localhost helper requests. All parent communication is outbound-only.'
+      });
     });
-
-    this.app.get('/api/policies', async (req, res) => {
-      try {
-        const policies = this.policyEngine.getAllPolicies();
-        res.json({ policies });
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    this.app.get('/api/policies/:id', async (req, res) => {
-      try {
-        const policy = this.policyEngine.getPolicy(req.params.id);
-        if (!policy) {
-          return res.status(404).json({ error: 'Policy not found' });
-        }
-        res.json(policy);
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    this.app.patch('/api/policies/:id', async (req, res) => {
-      try {
-        const policy = await this.policyEngine.updatePolicy(req.params.id, req.body);
-        res.json(policy);
-      } catch (error) {
-        res.status(400).json({ error: error.message });
-      }
-    });
-
-    this.app.delete('/api/policies/:id', async (req, res) => {
-      try {
-        const deleted = await this.policyEngine.deletePolicy(req.params.id);
-        if (!deleted) {
-          return res.status(404).json({ error: 'Policy not found' });
-        }
-        res.status(204).send();
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    // Sync policies from parent
-    this.app.post('/api/sync', async (req, res) => {
-      try {
-        const success = await this.policyEngine.syncFromParent();
-        res.json({ success, timestamp: new Date().toISOString() });
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    // Configuration management
-    this.app.get('/api/config', (req, res) => {
-      const config = this.configManager.getAll();
-      // Remove sensitive data
-      delete config.authToken;
-      res.json(config);
-    });
-
-    this.app.patch('/api/config', (req, res) => {
-      try {
-        const updated = this.configManager.update(req.body);
-        if (!updated) {
-          return res.status(500).json({ error: 'Failed to update configuration' });
-        }
-        res.json({ success: true });
-      } catch (error) {
-        res.status(400).json({ error: error.message });
-      }
-    });
-
-    // Process monitoring control
-    this.app.get('/api/monitor/status', (req, res) => {
-      const status = this.processMonitor.getStatus();
-      res.json(status);
-    });
-
-    this.app.post('/api/monitor/start', async (req, res) => {
-      try {
-        await this.processMonitor.start();
-        res.json({ status: 'started' });
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    this.app.post('/api/monitor/stop', async (req, res) => {
-      try {
-        await this.processMonitor.stop();
-        res.json({ status: 'stopped' });
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    // Auto-update trigger (enhanced)
-    this.app.post('/api/update', async (req, res) => {
-      try {
-        const { version, downloadUrl, checksum, latestVersion } = req.body;
-
-        if (!this.autoUpdater) {
-          return res.status(503).json({ error: 'Auto-updater not available' });
-        }
-
-        // Build update info from request
-        const updateInfo = {
-          latestVersion: latestVersion || version,
-          downloadUrl,
-          checksum,
-          updateAvailable: true,
-          autoUpdate: true
-        };
-
-        const result = await this.autoUpdater.triggerUpdate(updateInfo);
-
-        res.json({
-          message: result.success ? 'Update initiated' : 'Update failed',
-          version: latestVersion || version,
-          status: result.success ? 'pending' : 'failed',
-          error: result.error
-        });
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    // ========================================
-    // Plugin Extension Endpoints
-    // ========================================
-
-    // Deploy a monitor script from parent
-    this.app.post('/api/plugin/deploy-monitor', async (req, res) => {
-      try {
-        if (!this.pluginExtensionManager) {
-          return res.status(503).json({ error: 'Plugin extension manager not available' });
-        }
-
-        const { pluginId, monitorId, script, interval, platforms, checksum } = req.body;
-
-        if (!pluginId || !monitorId || !script) {
-          return res.status(400).json({ error: 'Missing required fields: pluginId, monitorId, script' });
-        }
-
-        const result = this.pluginExtensionManager.deployMonitor({
-          pluginId,
-          monitorId,
-          script,
-          interval: interval || 30000, // Default 30 seconds
-          platforms,
-          checksum
-        });
-
-        if (result.success) {
-          res.status(201).json(result);
-        } else {
-          res.status(400).json(result);
-        }
-      } catch (error) {
-        this.logger.error('Deploy monitor error', { error: error.message });
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    // Deploy an action script from parent
-    this.app.post('/api/plugin/deploy-action', async (req, res) => {
-      try {
-        if (!this.pluginExtensionManager) {
-          return res.status(503).json({ error: 'Plugin extension manager not available' });
-        }
-
-        const { pluginId, actionId, script, platforms, checksum } = req.body;
-
-        if (!pluginId || !actionId || !script) {
-          return res.status(400).json({ error: 'Missing required fields: pluginId, actionId, script' });
-        }
-
-        const result = this.pluginExtensionManager.deployAction({
-          pluginId,
-          actionId,
-          script,
-          platforms,
-          checksum
-        });
-
-        if (result.success) {
-          res.status(201).json(result);
-        } else {
-          res.status(400).json(result);
-        }
-      } catch (error) {
-        this.logger.error('Deploy action error', { error: error.message });
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    // Trigger action execution
-    this.app.post('/api/plugin/trigger-action', async (req, res) => {
-      try {
-        if (!this.pluginExtensionManager) {
-          return res.status(503).json({ error: 'Plugin extension manager not available' });
-        }
-
-        const { pluginId, actionId, triggerId, arguments: args } = req.body;
-
-        if (!pluginId || !actionId || !triggerId) {
-          return res.status(400).json({ error: 'Missing required fields: pluginId, actionId, triggerId' });
-        }
-
-        const result = await this.pluginExtensionManager.triggerAction({
-          pluginId,
-          actionId,
-          triggerId,
-          arguments: args || {}
-        });
-
-        res.json(result);
-      } catch (error) {
-        this.logger.error('Trigger action error', { error: error.message });
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    // Get queued plugin data for sync
-    this.app.get('/api/plugin/data', async (req, res) => {
-      try {
-        if (!this.pluginExtensionManager) {
-          return res.status(503).json({ error: 'Plugin extension manager not available' });
-        }
-
-        const pluginData = this.pluginExtensionManager.getQueuedData();
-        const actionResponses = this.pluginExtensionManager.getQueuedActionResponses();
-
-        res.json({
-          agentId: this.configManager.get('agentId'),
-          pluginData,
-          actionResponses,
-          timestamp: Date.now()
-        });
-      } catch (error) {
-        this.logger.error('Get plugin data error', { error: error.message });
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    // Clear queued data after successful sync
-    this.app.post('/api/plugin/data/clear', async (req, res) => {
-      try {
-        if (!this.pluginExtensionManager) {
-          return res.status(503).json({ error: 'Plugin extension manager not available' });
-        }
-
-        const { dataKeys, triggerIds } = req.body;
-
-        if (dataKeys) {
-          this.pluginExtensionManager.clearQueuedData(dataKeys);
-        }
-
-        if (triggerIds) {
-          this.pluginExtensionManager.clearActionResponses(triggerIds);
-        }
-
-        res.json({ success: true });
-      } catch (error) {
-        this.logger.error('Clear plugin data error', { error: error.message });
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    // Get plugin extension status
-    this.app.get('/api/plugin/status', async (req, res) => {
-      try {
-        if (!this.pluginExtensionManager) {
-          return res.status(503).json({ error: 'Plugin extension manager not available' });
-        }
-
-        const status = this.pluginExtensionManager.getStatus();
-        res.json(status);
-      } catch (error) {
-        this.logger.error('Get plugin status error', { error: error.message });
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    // Remove a deployed monitor
-    this.app.delete('/api/plugin/monitor/:pluginId/:monitorId', async (req, res) => {
-      try {
-        if (!this.pluginExtensionManager) {
-          return res.status(503).json({ error: 'Plugin extension manager not available' });
-        }
-
-        const { pluginId, monitorId } = req.params;
-        const removed = this.pluginExtensionManager.removeMonitor(pluginId, monitorId);
-
-        if (removed) {
-          res.status(204).send();
-        } else {
-          res.status(404).json({ error: 'Monitor not found' });
-        }
-      } catch (error) {
-        this.logger.error('Remove monitor error', { error: error.message });
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    // Remove a deployed action
-    this.app.delete('/api/plugin/action/:pluginId/:actionId', async (req, res) => {
-      try {
-        if (!this.pluginExtensionManager) {
-          return res.status(503).json({ error: 'Plugin extension manager not available' });
-        }
-
-        const { pluginId, actionId } = req.params;
-        const removed = this.pluginExtensionManager.removeAction(pluginId, actionId);
-
-        if (removed) {
-          res.status(204).send();
-        } else {
-          res.status(404).json({ error: 'Action not found' });
-        }
-      } catch (error) {
-        this.logger.error('Remove action error', { error: error.message });
-        res.status(500).json({ error: error.message });
-      }
-    });
-
-    // Process list
-    this.app.get('/api/processes', async (req, res) => {
-      try {
-        const platform = await this.getPlatform();
-        const processes = await platform.getProcessList();
-        res.json({ processes });
-      } catch (error) {
-        res.status(500).json({ error: error.message });
-      }
-    });
-  }
-
-  /**
-   * JWT authentication middleware
-   */
-  authenticateJWT(req, res, next) {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader) {
-      return res.status(401).json({ error: 'No authorization header' });
-    }
-
-    const token = authHeader.split(' ')[1]; // Bearer <token>
-
-    if (!token) {
-      return res.status(401).json({ error: 'No token provided' });
-    }
-
-    try {
-      // Verify token using configured auth token as secret
-      const secret = this.configManager.get('authToken');
-      if (!secret) {
-        return res.status(401).json({ error: 'Agent not configured' });
-      }
-
-      const decoded = jwt.verify(token, secret);
-      req.user = decoded;
-      next();
-    } catch (error) {
-      return res.status(403).json({ error: 'Invalid token' });
-    }
   }
 
   /**
@@ -578,7 +267,7 @@ class ApiServer {
   }
 
   /**
-   * Get platform users (for account linking)
+   * Get platform users (for account linking display in helper)
    */
   async getPlatformUsers() {
     const platform = process.platform;
@@ -630,13 +319,14 @@ class ApiServer {
   }
 
   /**
-   * Start the API server
+   * Start the API server (localhost only)
    */
   async start() {
     return new Promise((resolve, reject) => {
       try {
-        this.server = this.app.listen(this.port, () => {
-          this.logger.info(`API server listening on port ${this.port}`);
+        // SECURITY: Bind to localhost only, not 0.0.0.0
+        this.server = this.app.listen(this.port, '127.0.0.1', () => {
+          this.logger.info(`API server listening on localhost:${this.port} (helper app only)`);
           resolve();
         });
 

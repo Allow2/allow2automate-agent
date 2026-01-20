@@ -1,14 +1,14 @@
 @echo off
-REM Create startup shortcut for Allow2 Agent Helper
+REM Create startup shortcut for allow2automate-agent-helper
 
-set HELPER_EXE=C:\Program Files\Allow2\AgentHelper\allow2automate-agent-helper.exe
+set HELPER_EXE=C:\Program Files\Allow2\agent\helper\allow2automate-agent-helper.exe
 set STARTUP_FOLDER=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup
-set SHORTCUT=%STARTUP_FOLDER%\Allow2 Agent Helper.lnk
+set SHORTCUT=%STARTUP_FOLDER%\allow2automate-agent-helper.lnk
 
 echo Creating startup shortcut...
 
 REM Create shortcut using PowerShell
-powershell -Command "$WScriptShell = New-Object -ComObject WScript.Shell; $Shortcut = $WScriptShell.CreateShortcut('%SHORTCUT%'); $Shortcut.TargetPath = '%HELPER_EXE%'; $Shortcut.WorkingDirectory = 'C:\Program Files\Allow2\AgentHelper'; $Shortcut.Description = 'Allow2 Agent Helper - System tray and notifications'; $Shortcut.Save()"
+powershell -Command "$WScriptShell = New-Object -ComObject WScript.Shell; $Shortcut = $WScriptShell.CreateShortcut('%SHORTCUT%'); $Shortcut.TargetPath = '%HELPER_EXE%'; $Shortcut.WorkingDirectory = 'C:\Program Files\Allow2\agent\helper'; $Shortcut.Description = 'allow2automate-agent-helper'; $Shortcut.Save()"
 
 if %ERRORLEVEL% EQU 0 (
     echo Startup shortcut created successfully
