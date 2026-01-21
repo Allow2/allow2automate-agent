@@ -678,6 +678,13 @@ jobs:
           cp installers/linux/uninstall.sh "release-files/allow2automate-agent-linux-uninstall.sh"
           cp installers/windows/uninstall.bat "release-files/allow2automate-agent-windows-uninstall.bat"
 
+          # Copy universal Linux installer template (version placeholder will be replaced by parent app)
+          if [ -f "installers/linux/install.sh.template" ]; then
+            # Create a version with VERSION pre-filled for manual use
+            sed "s/__VERSION_PLACEHOLDER__/${VERSION#v}/g" installers/linux/install.sh.template > "release-files/install-linux.sh.template"
+            echo "✅ Universal Linux installer template included"
+          fi
+
           # Show what we copied
           echo "=== Files in release-files directory ==="
           ls -lh release-files/
@@ -762,6 +769,16 @@ jobs:
           sudo rpm -i allow2automate-agent-linux-x86_64-${VERSION}.rpm
           sudo systemctl start allow2automate-agent
           \`\`\`
+
+          #### Linux (Universal Installer - Recommended)
+          The easiest way to install on Linux is via the Allow2Automate parent application:
+          1. Open Allow2Automate on your parent device
+          2. Go to Settings > Device Monitoring
+          3. Click "Get Linux Installer Script"
+          4. Copy the generated script to the target Linux machine
+          5. Run: \`sudo sh install-allow2-agent.sh\`
+
+          The script auto-detects your distribution (Ubuntu, Debian, Fedora, RHEL, CentOS, openSUSE, etc.) and installs the correct package.
 
           ### Verification
 
