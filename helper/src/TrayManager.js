@@ -20,6 +20,9 @@ class TrayManager {
     const iconPath = this.getIconPath(this.currentStatus);
 
     this.tray = new SysTray({
+      // CRITICAL: copyDir extracts the native tray binary from pkg's virtual filesystem
+      // to a writable location (~/.cache/node-systray/) so it can be spawned
+      copyDir: true,
       menu: {
         icon: iconPath,
         title: 'Allow2',
