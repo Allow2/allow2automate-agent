@@ -35,20 +35,50 @@ npx @yao-pkg/pkg dist/bundle.cjs --targets node20-macos-arm64 --output dist/allo
 }
 
 # Create universal binary using lipo (if both builds succeeded)
+# IMPORTANT: pkg embeds JavaScript at specific byte offsets. lipo and codesign
+# can corrupt these offsets if not handled correctly. We must:
+# 1. Strip any ad-hoc signatures from individual binaries BEFORE lipo
+# 2. Create universal binary with lipo
+# 3. Strip any signature from the universal binary
+# 4. Sign ONCE with the final Developer ID certificate
+
 if [ -f "dist/allow2automate-agent-macos-x64" ] && [ -f "dist/allow2automate-agent-macos-arm64" ]; then
     echo "Creating universal binary..."
+
+    # Step 1: Strip ad-hoc signatures from individual binaries before lipo
+    # pkg creates binaries with ad-hoc signatures that can interfere
+    echo "Stripping ad-hoc signatures from individual binaries..."
+    codesign --remove-signature dist/allow2automate-agent-macos-x64 2>/dev/null || true
+    codesign --remove-signature dist/allow2automate-agent-macos-arm64 2>/dev/null || true
+
+    # Step 2: Create universal binary
     lipo -create -output dist/allow2automate-agent-macos \
         dist/allow2automate-agent-macos-x64 \
         dist/allow2automate-agent-macos-arm64
     echo "Universal binary created successfully"
-    # Verify
+
+    # Verify architectures
+    echo "Verifying universal binary architectures:"
+    lipo -info dist/allow2automate-agent-macos
     file dist/allow2automate-agent-macos
+
 elif [ -f "dist/allow2automate-agent-macos-arm64" ]; then
     echo "Only arm64 build succeeded, using that..."
+    # Strip signature before copying
+    codesign --remove-signature dist/allow2automate-agent-macos-arm64 2>/dev/null || true
     cp dist/allow2automate-agent-macos-arm64 dist/allow2automate-agent-macos
 elif [ -f "dist/allow2automate-agent-macos-x64" ]; then
     echo "Only x64 build succeeded, using that..."
+    # Strip signature before copying
+    codesign --remove-signature dist/allow2automate-agent-macos-x64 2>/dev/null || true
     cp dist/allow2automate-agent-macos-x64 dist/allow2automate-agent-macos
+fi
+
+# Step 3: Strip any signature from the universal/single binary before final signing
+# This is CRITICAL - pkg binaries embed JS at specific offsets that get corrupted by re-signing
+if [ -f "dist/allow2automate-agent-macos" ]; then
+    echo "Stripping signature from final binary (required for pkg binaries)..."
+    codesign --remove-signature dist/allow2automate-agent-macos 2>/dev/null || true
 fi
 
 # Create installer structure

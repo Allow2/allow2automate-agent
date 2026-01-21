@@ -46,19 +46,38 @@ case "$CURRENT_OS" in
         }
 
         # Create universal binary for macOS
+        # IMPORTANT: pkg embeds JavaScript at specific byte offsets. We must:
+        # 1. Strip any ad-hoc signatures from individual binaries BEFORE lipo
+        # 2. Create universal binary with lipo
+        # 3. The parent build.sh will handle final Developer ID signing
         if [ -f "dist/allow2automate-agent-helper-macos-x64" ] && [ -f "dist/allow2automate-agent-helper-macos-arm64" ]; then
             echo "Creating universal macOS binary..."
+
+            # Strip ad-hoc signatures before lipo (prevents embedded JS corruption)
+            echo "Stripping ad-hoc signatures from individual binaries..."
+            codesign --remove-signature dist/allow2automate-agent-helper-macos-x64 2>/dev/null || true
+            codesign --remove-signature dist/allow2automate-agent-helper-macos-arm64 2>/dev/null || true
+
             lipo -create -output dist/allow2automate-agent-helper-macos \
                 dist/allow2automate-agent-helper-macos-x64 \
                 dist/allow2automate-agent-helper-macos-arm64
             echo "Universal binary created:"
+            lipo -info dist/allow2automate-agent-helper-macos
             file dist/allow2automate-agent-helper-macos
         elif [ -f "dist/allow2automate-agent-helper-macos-arm64" ]; then
             echo "Only arm64 build available, using that..."
+            codesign --remove-signature dist/allow2automate-agent-helper-macos-arm64 2>/dev/null || true
             cp dist/allow2automate-agent-helper-macos-arm64 dist/allow2automate-agent-helper-macos
         elif [ -f "dist/allow2automate-agent-helper-macos-x64" ]; then
             echo "Only x64 build available, using that..."
+            codesign --remove-signature dist/allow2automate-agent-helper-macos-x64 2>/dev/null || true
             cp dist/allow2automate-agent-helper-macos-x64 dist/allow2automate-agent-helper-macos
+        fi
+
+        # Strip signature from final binary (ready for Developer ID signing in parent build)
+        if [ -f "dist/allow2automate-agent-helper-macos" ]; then
+            echo "Stripping signature from final helper binary..."
+            codesign --remove-signature dist/allow2automate-agent-helper-macos 2>/dev/null || true
         fi
         ;;
     Linux)

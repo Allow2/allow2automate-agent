@@ -402,33 +402,190 @@ Log rotation:
 
 ## Troubleshooting
 
-### Agent Not Starting
+### Diagnostic Scripts
 
-1. Check logs in the platform-specific log directory
-2. Verify Node.js version >= 18.0.0
-3. Ensure proper permissions (run as admin/root)
-4. Check if port 8443 is available
+We provide diagnostic scripts for each platform that check all agent components and display relevant log entries. **Run these first when troubleshooting:**
 
-### Process Not Being Terminated
+| Platform | Script | Command |
+|----------|--------|---------|
+| **Windows** | [diagnose-windows.ps1](scripts/diagnose-windows.ps1) | `powershell -ExecutionPolicy Bypass -File .\diagnose-windows.ps1` |
+| **macOS** | [diagnose-macos.sh](scripts/diagnose-macos.sh) | `sudo ./diagnose-macos.sh` |
+| **Linux** | [diagnose-linux.sh](scripts/diagnose-linux.sh) | `sudo ./diagnose-linux.sh` |
+
+These scripts check:
+- Service/daemon status
+- Running processes
+- Binary installation and architecture
+- Configuration file validity
+- Log file contents
+- Network connectivity to parent
+- System requirements
+
+### Quick Status Commands
+
+#### Windows
+```powershell
+# Check service status
+sc query Allow2AutomateAgent
+
+# Check process
+tasklist /FI "IMAGENAME eq allow2automate-agent.exe"
+
+# View logs
+Get-Content "C:\ProgramData\Allow2\agent\logs\agent.log" -Tail 50
+
+# Start/stop/restart service
+sc start Allow2AutomateAgent
+sc stop Allow2AutomateAgent
+```
+
+#### macOS
+```bash
+# Check service status
+sudo launchctl list | grep allow2
+
+# Check process
+pgrep -fl allow2automate-agent
+
+# View logs
+tail -50 /Library/Logs/Allow2/agent/agent.log
+
+# Start/stop service
+sudo launchctl start com.allow2.automate-agent
+sudo launchctl stop com.allow2.automate-agent
+
+# Check binary architecture (important for M1/M2/M3 Macs)
+file /usr/local/share/allow2automate-agent/allow2automate-agent
+```
+
+#### Linux
+```bash
+# Check service status
+sudo systemctl status allow2automate-agent
+
+# Check process
+pgrep -fl allow2automate-agent
+
+# View logs
+tail -50 /var/log/allow2/agent/agent.log
+sudo journalctl -u allow2automate-agent -f
+
+# Start/stop/restart service
+sudo systemctl start allow2automate-agent
+sudo systemctl stop allow2automate-agent
+sudo systemctl restart allow2automate-agent
+```
+
+### Common Issues
+
+#### Agent Not Starting
+
+1. **Run the diagnostic script** for your platform (see above)
+2. Check logs in the platform-specific log directory
+3. Verify configuration file exists and contains valid JSON
+4. Ensure proper permissions (run as admin/root)
+5. Check if port 8443 is available
+
+#### "SyntaxError: Invalid or unexpected token" on macOS
+
+This error in `pkg/prelude/bootstrap.js` indicates the binary is **corrupt or built for the wrong architecture**:
+
+```
+pkg/prelude/bootstrap.js:1
+SyntaxError: Invalid or unexpected token
+```
+
+**Solution:**
+1. Check your Mac's architecture: `uname -m`
+   - `arm64` = Apple Silicon (M1/M2/M3)
+   - `x86_64` = Intel Mac
+2. Download the correct installer from the parent app
+3. Verify binary architecture: `file /usr/local/share/allow2automate-agent/allow2automate-agent`
+4. Re-install with the matching architecture build
+
+#### Configuration File Not Found
+
+The agent requires a `config.json` with credentials to connect to the parent app:
+
+| Platform | Config Location |
+|----------|-----------------|
+| Windows | `C:\ProgramData\Allow2\agent\config.json` |
+| macOS | `/Library/Application Support/Allow2/agent/config.json` |
+| Linux | `/etc/allow2/agent/config.json` |
+
+**Solution:** Download the installer from the parent app - it embeds the configuration automatically.
+
+#### Cannot Connect to Parent
+
+1. Verify the parent app is running
+2. Check `parentApiUrl` in config points to the correct IP:port
+3. Test connectivity: `curl http://<parent-ip>:<port>/api/health`
+4. Check firewall rules on both machines
+5. Ensure both devices are on the same network
+
+#### Process Not Being Terminated
 
 1. Check if policy is active (schedule, days)
-2. Verify process name matches exactly
+2. Verify process name matches exactly (case-sensitive on macOS/Linux)
 3. Check agent has sufficient privileges
 4. Review logs for error messages
 
-### mDNS Not Working
+#### mDNS Not Working
 
 1. Ensure `enableMDNS` is true in config
-2. Check firewall allows mDNS (port 5353)
+2. Check firewall allows mDNS (port 5353 UDP)
 3. Verify network supports multicast
-4. Check Bonjour/Avahi service is running
+4. Platform-specific:
+   - **Windows**: Bonjour service should be running
+   - **macOS**: mDNSResponder is built-in
+   - **Linux**: Install and start avahi-daemon
 
-### API Not Accessible
+#### API Not Accessible
 
 1. Check agent is running
 2. Verify port is not blocked by firewall
 3. Ensure proper authentication token
 4. Check SSL/TLS certificate configuration
+
+### Log File Locations
+
+| Platform | Log Directory |
+|----------|---------------|
+| Windows | `C:\ProgramData\Allow2\agent\logs\` |
+| macOS | `/Library/Logs/Allow2/agent/` |
+| Linux | `/var/log/allow2/agent/` |
+
+Log files:
+- `agent.log` - General application logs (JSON format)
+- `error.log` - Error logs only
+
+### Uninstalling
+
+#### Windows
+Run as Administrator:
+```batch
+"C:\Program Files\Allow2\uninstall.bat"
+```
+Or use Windows Settings > Apps > Allow2Automate Agent > Uninstall
+
+#### macOS
+```bash
+sudo /usr/local/share/allow2automate-agent/uninstall.sh
+```
+
+#### Linux
+```bash
+# Debian/Ubuntu
+sudo apt remove allow2automate-agent
+
+# RHEL/Fedora/CentOS
+sudo dnf remove allow2automate-agent
+# or
+sudo yum remove allow2automate-agent
+
+# Or use the uninstall script
+sudo /usr/local/share/allow2automate-agent/uninstall.sh
+```
 
 ## Contributing
 
