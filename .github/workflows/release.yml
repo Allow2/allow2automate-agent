@@ -646,6 +646,7 @@ jobs:
       - name: Rename installers with version
         run: |
           VERSION="${{ steps.version.outputs.VERSION }}"
+          VERSION_NUM="${VERSION#v}"  # Remove 'v' prefix for URLs
           mkdir -p release-files
 
           # Debug: Show artifact structure
@@ -678,11 +679,20 @@ jobs:
           cp installers/linux/uninstall.sh "release-files/allow2automate-agent-linux-uninstall.sh"
           cp installers/windows/uninstall.bat "release-files/allow2automate-agent-windows-uninstall.bat"
 
-          # Copy universal Linux installer template (version placeholder will be replaced by parent app)
+          # Generate versioned Linux install script with HARDCODED URLs to this release
+          # This script downloads installers directly from this specific release
+          echo "=== Generating versioned Linux install script ==="
           if [ -f "installers/linux/install.sh.template" ]; then
-            # Create a version with VERSION pre-filled for manual use
-            sed "s/__VERSION_PLACEHOLDER__/${VERSION#v}/g" installers/linux/install.sh.template > "release-files/install-linux.sh.template"
-            echo "✅ Universal Linux installer template included"
+            SCRIPT_FILE="release-files/install-allow2-agent-${VERSION}.sh"
+
+            # Replace VERSION placeholder with actual version
+            sed "s/__VERSION_PLACEHOLDER__/${VERSION_NUM}/g" installers/linux/install.sh.template > "$SCRIPT_FILE"
+
+            # Make the script executable
+            chmod +x "$SCRIPT_FILE"
+
+            echo "✅ Generated versioned install script: install-allow2-agent-${VERSION}.sh"
+            echo "   This script will download packages from release ${VERSION}"
           fi
 
           # Show what we copied
