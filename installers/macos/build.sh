@@ -545,6 +545,9 @@ else
 fi
 
 # Then, build product archive with distribution XML
+# NOTE: PKG signing is handled by the GitHub Actions workflow (release.yml)
+# which also handles notarization. Do NOT sign here to avoid double-signing
+# which can corrupt the distribution.xml inside the PKG.
 PKG_NAME="allow2automate-agent-darwin-universal-v${VERSION}.pkg"
 productbuild \
     --distribution "installers/macos/distribution.xml" \
@@ -553,24 +556,7 @@ productbuild \
     --version "$VERSION" \
     "$DIST_DIR/$PKG_NAME"
 
-# Sign the PKG if INSTALLER certificate available
-if [ -n "$APPLE_DEVELOPER_ID" ] && [ -n "$INSTALLER_IDENTITY_HASH" ]; then
-    echo "Signing product package with Developer ID Installer certificate..."
-    echo "Using installer identity: ${INSTALLER_IDENTITY_HASH:0:8}...${INSTALLER_IDENTITY_HASH: -4}"
-    productsign --sign "$INSTALLER_IDENTITY_HASH" \
-        --keychain "$KEYCHAIN_PATH" \
-        "$DIST_DIR/$PKG_NAME" \
-        "$DIST_DIR/${PKG_NAME%.pkg}-signed.pkg"
-    mv "$DIST_DIR/${PKG_NAME%.pkg}-signed.pkg" "$DIST_DIR/$PKG_NAME"
-
-    echo "✅ Verifying package signature..."
-    pkgutil --check-signature "$DIST_DIR/$PKG_NAME"
-elif [ -n "$APPLE_DEVELOPER_ID" ]; then
-    echo "⚠️  WARNING: APPLE_DEVELOPER_ID is set but no Installer identity found"
-    echo "PKG will NOT be signed - only the binaries inside are signed"
-    echo "For a fully signed PKG, ensure APPLE_INSTALLER_CERT_BASE64 secret contains"
-    echo "a valid 'Developer ID Installer' certificate"
-fi
+echo "📦 Unsigned PKG created (signing handled by release workflow)"
 
 echo "✅ macOS PKG created: $DIST_DIR/$PKG_NAME"
 ls -lh "$DIST_DIR/$PKG_NAME"
