@@ -46,16 +46,91 @@ class PolicyEngine {
 
   /**
    * Build common headers for API requests
+   * Includes machine identification for first-time registration
    * @returns {Object}
    */
   buildApiHeaders() {
     const authToken = this.configManager.get('authToken');
+    const agentId = this.configManager.get('agentId');
+
+    // Get machine ID for first-time registration
+    const machineId = this.getMachineId();
+    const hostname = require('os').hostname();
+
     return {
       'Authorization': `Bearer ${authToken}`,
       'Content-Type': 'application/json',
       'X-Agent-Version': this.getAgentVersion(),
-      'X-Agent-Platform': process.platform
+      'X-Agent-Platform': process.platform,
+      'X-Machine-Id': machineId,
+      'X-Hostname': hostname,
+      'X-Agent-Id': agentId || ''
     };
+  }
+
+  /**
+   * Get or generate a stable machine ID
+   * Uses platform-specific unique identifiers
+   * @returns {string}
+   */
+  getMachineId() {
+    // Check if we have a cached machine ID
+    let machineId = this.configManager.get('machineId');
+    if (machineId) return machineId;
+
+    // Generate machine ID from system info
+    const os = require('os');
+    const crypto = require('crypto');
+
+    // Create a hash from stable system properties
+    const components = [
+      os.hostname(),
+      os.platform(),
+      os.arch(),
+      os.cpus()[0]?.model || 'unknown'
+    ];
+
+    // Add network interface MACs for uniqueness
+    const networkInterfaces = os.networkInterfaces();
+    for (const iface of Object.values(networkInterfaces)) {
+      for (const addr of iface) {
+        if (!addr.internal && addr.mac && addr.mac !== '00:00:00:00:00:00') {
+          components.push(addr.mac);
+          break; // Only use first non-internal MAC
+        }
+      }
+    }
+
+    machineId = crypto.createHash('sha256')
+      .update(components.join(':'))
+      .digest('hex')
+      .substring(0, 32);
+
+    // Cache the machine ID
+    this.configManager.set('machineId', machineId);
+    this.logger.info('Generated machine ID', { machineId });
+
+    return machineId;
+  }
+
+  /**
+   * Handle JWT upgrade from parent
+   * When parent returns a new JWT token, store it for future requests
+   * @param {Response} response - Fetch response object
+   */
+  handleTokenUpgrade(response) {
+    const newToken = response.headers.get('X-Agent-Token');
+    const newAgentId = response.headers.get('X-Agent-Id');
+
+    if (newToken) {
+      this.configManager.set('authToken', newToken);
+      this.logger.info('Received and stored new auth token from parent');
+    }
+
+    if (newAgentId) {
+      this.configManager.set('agentId', newAgentId);
+      this.logger.info('Received and stored new agent ID from parent', { agentId: newAgentId });
+    }
   }
 
   /**
@@ -295,11 +370,14 @@ class PolicyEngine {
     }
 
     try {
-      // Use common headers with X-Agent-Version
-      const response = await fetch(`${parentApiUrl}/api/agents/${agentId}/policies`, {
+      // Use common headers with machine info for auto-registration
+      const response = await fetch(`${parentApiUrl}/api/agent/policies`, {
         method: 'GET',
         headers: this.buildApiHeaders()
       });
+
+      // Check for token upgrade (first-time registration)
+      this.handleTokenUpgrade(response);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -365,14 +443,19 @@ class PolicyEngine {
         offlineDurationSeconds: Math.round(offlineDuration / 1000)
       });
 
-      await fetch(`${parentApiUrl}/api/agents/${agentId}/offline-recovery`, {
+      const response = await fetch(`${parentApiUrl}/api/agent/heartbeat`, {
         method: 'POST',
         headers: this.buildApiHeaders(),
         body: JSON.stringify({
-          offlineDuration,
-          recoveredAt: Date.now()
+          metadata: {
+            offlineRecovery: true,
+            offlineDuration,
+            recoveredAt: Date.now()
+          }
         })
       });
+      // Handle token upgrade
+      this.handleTokenUpgrade(response);
     } catch (error) {
       // Non-critical - log and continue
       this.logger.warn('Failed to report offline recovery', {
@@ -422,6 +505,9 @@ class PolicyEngine {
         })
       });
 
+      // Handle token upgrade
+      this.handleTokenUpgrade(response);
+
       if (response.ok) {
         // Clear synced data
         this.pluginExtensionManager.clearQueuedData();
@@ -469,12 +555,15 @@ class PolicyEngine {
         action: 'terminated'
       };
 
-      // Use common headers with X-Agent-Version
-      const response = await fetch(`${parentApiUrl}/api/violations`, {
+      // Use common headers with machine info
+      const response = await fetch(`${parentApiUrl}/api/agent/violations`, {
         method: 'POST',
         headers: this.buildApiHeaders(),
         body: JSON.stringify(violation)
       });
+
+      // Handle token upgrade
+      this.handleTokenUpgrade(response);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
