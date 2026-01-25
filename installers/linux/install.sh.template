@@ -21,7 +21,7 @@ set -e
 # DO NOT EDIT - This section is auto-generated with your agent credentials
 #=============================================================================
 AGENT_CONFIG='__AGENT_CONFIG_PLACEHOLDER__'
-VERSION="__VERSION_PLACEHOLDER__"
+AGENT_VERSION="__VERSION_PLACEHOLDER__"
 #=============================================================================
 
 REPO="Allow2/allow2automate-agent"
@@ -229,13 +229,13 @@ detect_architecture() {
 download_package() {
     if [ "$PKG_FORMAT" = "deb" ]; then
         PKG_ARCH="$DEB_ARCH"
-        PKG_NAME="allow2automate-agent-linux-${PKG_ARCH}-v${VERSION}.deb"
+        PKG_NAME="allow2automate-agent-linux-${PKG_ARCH}-v${AGENT_VERSION}.deb"
     else
         PKG_ARCH="$RPM_ARCH"
-        PKG_NAME="allow2automate-agent-linux-${PKG_ARCH}-v${VERSION}.rpm"
+        PKG_NAME="allow2automate-agent-linux-${PKG_ARCH}-v${AGENT_VERSION}.rpm"
     fi
 
-    PKG_URL="${GITHUB_RELEASES}/v${VERSION}/${PKG_NAME}"
+    PKG_URL="${GITHUB_RELEASES}/v${AGENT_VERSION}/${PKG_NAME}"
     PKG_PATH="/tmp/${PKG_NAME}"
 
     log "Downloading: $PKG_NAME"
@@ -246,24 +246,24 @@ download_package() {
         curl -fsSL -o "$PKG_PATH" "$PKG_URL" || {
             # Try alternative naming convention
             if [ "$PKG_FORMAT" = "deb" ]; then
-                ALT_PKG_NAME="allow2automate-agent_${VERSION}_${PKG_ARCH}.deb"
+                ALT_PKG_NAME="allow2automate-agent_${AGENT_VERSION}_${PKG_ARCH}.deb"
             else
-                ALT_PKG_NAME="allow2automate-agent-${VERSION}.${PKG_ARCH}.rpm"
+                ALT_PKG_NAME="allow2automate-agent-${AGENT_VERSION}.${PKG_ARCH}.rpm"
             fi
-            ALT_URL="${GITHUB_RELEASES}/v${VERSION}/${ALT_PKG_NAME}"
+            ALT_URL="${GITHUB_RELEASES}/v${AGENT_VERSION}/${ALT_PKG_NAME}"
             warn "Primary URL failed, trying alternative: $ALT_PKG_NAME"
-            curl -fsSL -o "$PKG_PATH" "$ALT_URL" || error "Download failed. Check version $VERSION exists at:\n  https://github.com/$REPO/releases"
+            curl -fsSL -o "$PKG_PATH" "$ALT_URL" || error "Download failed. Check version $AGENT_VERSION exists at:\n  https://github.com/$REPO/releases"
         }
     else
         wget -q -O "$PKG_PATH" "$PKG_URL" || {
             if [ "$PKG_FORMAT" = "deb" ]; then
-                ALT_PKG_NAME="allow2automate-agent_${VERSION}_${PKG_ARCH}.deb"
+                ALT_PKG_NAME="allow2automate-agent_${AGENT_VERSION}_${PKG_ARCH}.deb"
             else
-                ALT_PKG_NAME="allow2automate-agent-${VERSION}.${PKG_ARCH}.rpm"
+                ALT_PKG_NAME="allow2automate-agent-${AGENT_VERSION}.${PKG_ARCH}.rpm"
             fi
-            ALT_URL="${GITHUB_RELEASES}/v${VERSION}/${ALT_PKG_NAME}"
+            ALT_URL="${GITHUB_RELEASES}/v${AGENT_VERSION}/${ALT_PKG_NAME}"
             warn "Primary URL failed, trying alternative: $ALT_PKG_NAME"
-            wget -q -O "$PKG_PATH" "$ALT_URL" || error "Download failed. Check version $VERSION exists at:\n  https://github.com/$REPO/releases"
+            wget -q -O "$PKG_PATH" "$ALT_URL" || error "Download failed. Check version $AGENT_VERSION exists at:\n  https://github.com/$REPO/releases"
         }
     fi
 
@@ -391,7 +391,7 @@ verify_installation() {
         log "Agent ID: $AGENT_ID"
     fi
 
-    log "Version: $VERSION"
+    log "Version: $AGENT_VERSION"
     log ""
     log "Useful commands:"
     info "  Status:    systemctl status allow2automate-agent"
@@ -412,7 +412,7 @@ verify_installation() {
 main() {
     echo ""
     log "============================================"
-    log "  Allow2Automate Agent Installer v${VERSION}"
+    log "  Allow2Automate Agent Installer v${AGENT_VERSION}"
     log "============================================"
     echo ""
 
